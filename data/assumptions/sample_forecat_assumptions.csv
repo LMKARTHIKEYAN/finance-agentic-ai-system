@@ -1,0 +1,11 @@
+month,assumption,metric,impact_type,impact_value,direction,business_reason
+2026-07,Marketing Campaign,orders,percentage,15,increase,Planned marketing campaign expected to increase customer demand.
+2026-07,Fuel Price Increase,revenue,percentage,-5,decrease,Higher fuel prices may reduce order demand or reduce pricing competitiveness.
+2026-08,Festival Season Demand,orders,percentage,10,increase,Festival season expected to increase logistics demand.
+2026-08,Price Increase,revenue,percentage,8,increase,Management plans to increase pricing for selected vehicle categories.
+2026-09,New Cluster Launch,orders,percentage,5,increase,New operating cluster launch expected to add incremental orders.
+2026-09,Driver Availability Constraint,orders,percentage,-3,decrease,Partner/driver supply constraint may reduce fulfillment capacity.
+2026-10,Corporate Customer Growth,revenue,percentage,12,increase,New B2B customers expected to increase high-value order revenue.
+2026-10,Operational Efficiency Improvement,cost,percentage,-4,decrease,Process improvement expected to reduce operating cost.
+2026-11,Seasonal Demand Slowdown,orders,percentage,-6,decrease,Post-festival demand normalization expected.
+2026-12,Year-End Business Push,revenue,percentage,10,increase,Year-end business activity expected to increase revenue.
