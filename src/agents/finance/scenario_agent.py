@@ -261,8 +261,9 @@ class ScenarioAgent:
         forecast_data["base_orders"] = forecast_data["forecast_orders"]
         forecast_data["base_revenue"] = forecast_data["forecast_revenue"]
 
-        forecast_data["adjusted_orders"] = forecast_data["forecast_orders"]
-        forecast_data["adjusted_revenue"] = forecast_data["forecast_revenue"]
+        forecast_data["adjusted_orders"] = (forecast_data["forecast_orders"].astype(float) )
+                                            
+        forecast_data["adjusted_revenue"] = (forecast_data["forecast_revenue"].astype(float) )
 
         if "forecast_cost" in forecast_data.columns:
             forecast_data["forecast_cost"] = pd.to_numeric(

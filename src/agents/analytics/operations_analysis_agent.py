@@ -127,7 +127,7 @@ class OperationsAnalysisAgent:
 
         filtered_data["order_date"] = pd.to_datetime(
             filtered_data["order_date"],
-            dayfirst=True,
+            format="%d-%m-%Y",
             errors="coerce",
         )
 
@@ -161,7 +161,7 @@ class OperationsAnalysisAgent:
             filtered_data = filtered_data[
                 filtered_data["order_date"] >= pd.to_datetime(
                     start_date,
-                    dayfirst=True,
+                    format="%Y-%m-%d",
                 )
             ]
 
@@ -169,7 +169,7 @@ class OperationsAnalysisAgent:
             filtered_data = filtered_data[
                 filtered_data["order_date"] <= pd.to_datetime(
                     end_date,
-                    dayfirst=True,
+                     format="%Y-%m-%d",
                 )
             ]
 
