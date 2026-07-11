@@ -1,176 +1,283 @@
-import os
-import sys
+from types import SimpleNamespace
 
-PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..")
-)
-sys.path.insert(0, PROJECT_ROOT)
+import pytest
 
-import pandas as pd
-
-from src.agents.analytics.operations_analysis_agent import (
-    OperationsAnalysisAgent,
-)
-from src.agents.finance.budget_agent import BudgetAgent
-from src.agents.finance.finance_rules_agent import (
-    FinanceRulesAgent,
-)
-from src.agents.finance.forecast_agent import ForecastAgent
-from src.agents.finance.kpi_agent import KPIAgent
-from src.agents.finance.scenario_agent import ScenarioAgent
-from src.agents.finance.variance_agent import (
-    RevenueVarianceAgent,
-)
-from src.agents.reporting.commentary_agent import CommentaryAgent
+from src.agents.reporting.commentary_agent import CommentaryAgent, CommentaryResult
 
 
-def main():
-    orders_path = os.path.join(
-        PROJECT_ROOT,
-        "data",
-        "operations",
-        "sample_orders.csv",
+def make_kpi(
+    kpi: str,
+    display_name: str,
+    value,
+    unit: str,
+    *,
+    source: str = "test",
+    period: str | None = "2026-06",
+    dimension: str | None = None,
+    dimension_value: str | None = None,
+):
+    return SimpleNamespace(
+        kpi=kpi,
+        display_name=display_name,
+        value=value,
+        unit=unit,
+        source=source,
+        period=period,
+        dimension=dimension,
+        dimension_value=dimension_value,
     )
 
-    budget_path = os.path.join(
-        PROJECT_ROOT,
-        "data",
-        "planning",
-        "sample_budget.csv",
+
+def make_kpi_result(*kpis, unavailable_kpis=None, unknown_kpis=None):
+    return SimpleNamespace(
+        selected_kpis=list(kpis),
+        unavailable_kpis=list(unavailable_kpis or []),
+        unknown_kpis=list(unknown_kpis or []),
     )
 
-    assumptions_path = os.path.join(
-        PROJECT_ROOT,
-        "data",
-        "assumptions",
-        "business_assumptions.csv",
-    )
 
-    orders_data = pd.read_csv(orders_path)
-    budget_data = pd.read_csv(budget_path)
-    assumptions_data = pd.read_csv(assumptions_path)
+def test_requires_kpi_result():
+    agent = CommentaryAgent()
 
-    operations_agent = OperationsAnalysisAgent()
-    budget_agent = BudgetAgent()
-    variance_agent = RevenueVarianceAgent()
-    forecast_agent = ForecastAgent()
-    scenario_agent = ScenarioAgent()
-    rules_agent = FinanceRulesAgent()
-    kpi_agent = KPIAgent()
-    commentary_agent = CommentaryAgent()
+    with pytest.raises(ValueError, match="kpi_result is required"):
+        agent.analyze(None)
 
-    actual_result = operations_agent.analyze(
-        data=orders_data,
-        start_date="2026-04-01",
-        end_date="2026-06-30",
-        group_by="month",
-    )
 
-    budget_result = budget_agent.analyze(
-        data=budget_data,
-        start_month="2026-04",
-        end_month="2026-06",
-        group_by="month",
-    )
+def test_requires_selected_kpis_attribute():
+    agent = CommentaryAgent()
 
-    variance_result = variance_agent.analyze(
-        actual_result=actual_result,
-        budget_result=budget_result,
-    )
+    with pytest.raises(ValueError, match="selected_kpis"):
+        agent.analyze(SimpleNamespace())
 
-    historical_result = operations_agent.analyze(
-        data=orders_data,
-        start_date="2025-07-01",
-        end_date="2026-06-30",
-        group_by="month",
-    )
 
-    forecast_result = forecast_agent.analyze(
-        period_summary=historical_result.period_summary,
-        frequency="month",
-        rolling_window=3,
-        forecast_periods=6,
-    )
+def test_selected_kpis_must_be_list():
+    agent = CommentaryAgent()
 
-    scenario_result = scenario_agent.analyze(
-        forecast_result=forecast_result,
-        assumptions=assumptions_data,
-        scenario_name="Management Case",
-    )
+    with pytest.raises(TypeError, match="selected_kpis must be a list"):
+        agent.analyze(SimpleNamespace(selected_kpis="actual_revenue"))
 
-    rules_result = rules_agent.analyze(
-        operations_result=actual_result,
-        budget_result=budget_result,
-        revenue_variance_result=variance_result,
-        forecast_result=forecast_result,
-        scenario_result=scenario_result,
-    )
 
-    kpi_result = kpi_agent.analyze(
-        requested_kpis=[
+def test_requires_at_least_one_selected_kpi():
+    agent = CommentaryAgent()
+
+    with pytest.raises(ValueError, match="At least one selected KPI"):
+        agent.analyze(make_kpi_result())
+
+
+def test_generates_basic_kpi_commentary_and_source_rows():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi(
+            "actual_revenue",
             "Actual Revenue",
-            "Fulfillment",
-            "Cancellation",
-            "Revenue Variance",
-            "Price Effect",
-            "Volume Effect",
+            2_500_000,
+            "currency",
+            dimension="vehicle_category",
+            dimension_value="Tata Ace",
+        ),
+        make_kpi(
+            "fulfillment_percentage",
+            "Fulfillment Percentage",
+            94.5,
+            "percentage",
+        ),
+    )
+
+    result = agent.analyze(kpi_result)
+
+    assert isinstance(result, CommentaryResult)
+    assert "Actual revenue reached ₹25.00 lakh." in result.executive_summary
+    assert "Fulfillment was 94.50%." in result.executive_summary
+    assert any("Actual Revenue" in item for item in result.kpi_commentary)
+    assert any("Tata Ace" in item for item in result.kpi_commentary)
+    assert len(result.source_kpis) == 2
+    assert result.source_kpis[0]["kpi"] == "actual_revenue"
+
+
+def test_positive_revenue_variance_commentary():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi("actual_revenue", "Actual Revenue", 12_000_000, "currency"),
+        make_kpi("revenue_variance", "Revenue Variance", 1_000_000, "currency"),
+    )
+    variance_result = SimpleNamespace(
+        revenue_variance=1_000_000,
+        price_effect=600_000,
+        volume_effect=400_000,
+        new_discontinued_effect=0,
+        variance_check=0.0,
+    )
+
+    result = agent.analyze(
+        kpi_result,
+        revenue_variance_result=variance_result,
+    )
+
+    assert any("favourable compared with budget" in x for x in result.variance_commentary)
+    assert any("Price/AOV effect was favourable" in x for x in result.variance_commentary)
+    assert any("Volume effect was favourable" in x for x in result.variance_commentary)
+    assert "Favourable price/AOV movement supported revenue." in result.positive_drivers
+    assert "Higher completed-order volume supported revenue." in result.positive_drivers
+
+
+def test_negative_revenue_variance_is_reported_as_risk():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi("actual_revenue", "Actual Revenue", 8_000_000, "currency"),
+        make_kpi("revenue_variance", "Revenue Variance", -2_000_000, "currency"),
+    )
+    variance_result = SimpleNamespace(
+        revenue_variance=-2_000_000,
+        price_effect=-500_000,
+        volume_effect=-1_500_000,
+        new_discontinued_effect=0,
+        variance_check=0.0,
+    )
+
+    result = agent.analyze(
+        kpi_result,
+        revenue_variance_result=variance_result,
+    )
+
+    assert "Revenue is below budget." in result.risks
+    assert "Price/AOV movement reduced revenue." in result.risks
+    assert "Lower completed-order volume reduced revenue." in result.risks
+    assert any("Revenue was below budget" in x for x in [result.executive_summary])
+
+
+def test_forecast_commentary_for_multiple_periods():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi(
+            "forecast_revenue",
             "Forecast Revenue",
-            "Adjusted Revenue",
-            "Finance Rules Status",
+            1_000_000,
+            "currency",
+            period="2026-07",
+        ),
+    )
+    forecast_result = SimpleNamespace(
+        method="three-month moving average",
+        forecast_summary=[
+            {
+                "forecast_period": "2026-07",
+                "forecast_orders": 1_000,
+                "forecast_revenue": 1_000_000,
+            },
+            {
+                "forecast_period": "2026-08",
+                "forecast_orders": 1_100,
+                "forecast_revenue": 1_150_000,
+            },
         ],
-        operations_result=actual_result,
-        budget_result=budget_result,
-        revenue_variance_result=variance_result,
-        forecast_result=forecast_result,
-        scenario_result=scenario_result,
-        finance_rules_result=rules_result,
-        forecast_period="2026-07",
-        scenario_period="2026-07",
     )
 
-    result = commentary_agent.analyze(
-        kpi_result=kpi_result,
-        revenue_variance_result=variance_result,
+    result = agent.analyze(
+        kpi_result,
         forecast_result=forecast_result,
-        scenario_result=scenario_result,
-        finance_rules_result=rules_result,
     )
 
-    print("\nExecutive Summary")
-    print(result.executive_summary)
-
-    print("\nKPI Commentary")
-    for row in result.kpi_commentary:
-        print("-", row)
-
-    print("\nVariance Commentary")
-    for row in result.variance_commentary:
-        print("-", row)
-
-    print("\nForecast Commentary")
-    for row in result.forecast_commentary:
-        print("-", row)
-
-    print("\nScenario Commentary")
-    for row in result.scenario_commentary:
-        print("-", row)
-
-    print("\nControl Commentary")
-    for row in result.control_commentary:
-        print("-", row)
-
-    print("\nPositive Drivers")
-    for row in result.positive_drivers:
-        print("-", row)
-
-    print("\nRisks")
-    for row in result.risks:
-        print("-", row)
-
-    print("\nManagement Attention")
-    for row in result.management_attention:
-        print("-", row)
+    assert any("three-month moving average" in x for x in result.forecast_commentary)
+    assert any("forecast revenue increases" in x.lower() for x in result.forecast_commentary)
+    assert "Base forecast revenue for 2026-07 is ₹10.00 lakh." in result.executive_summary
 
 
-if __name__ == "__main__":
-    main()
+def test_scenario_commentary_and_unapplied_assumption_attention():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi("actual_revenue", "Actual Revenue", 1_000_000, "currency")
+    )
+    scenario_result = SimpleNamespace(
+        scenario_name="Management Upside",
+        applied_assumption_count=1,
+        total_assumptions=2,
+        adjusted_forecast=[
+            {
+                "forecast_period": "2026-07",
+                "orders_adjustment": 100,
+                "revenue_adjustment": 200_000,
+            }
+        ],
+        unapplied_assumptions=[{"name": "Unknown assumption"}],
+    )
+
+    result = agent.analyze(
+        kpi_result,
+        scenario_result=scenario_result,
+    )
+
+    assert any("Management Upside applied 1 of 2" in x for x in result.scenario_commentary)
+    assert "Some business assumptions could not be applied." in result.risks
+    assert "Review unapplied business assumptions." in result.management_attention
+    assert any("1 business assumptions" in result.executive_summary for _ in [0])
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_comment", "expected_attention"),
+    [
+        ("PASS", "No finance-control warnings or errors were identified.", None),
+        ("WARNING", "warning(s) require management review.", "Review finance-control warnings"),
+        ("FAIL", "finance-control error(s) must be resolved", "Resolve finance-control errors"),
+    ],
+)
+def test_finance_control_commentary(status, expected_comment, expected_attention):
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi("actual_revenue", "Actual Revenue", 1_000_000, "currency")
+    )
+    finance_rules_result = SimpleNamespace(
+        overall_status=status,
+        rules_checked=5,
+        passed_rules=3 if status != "PASS" else 5,
+        warning_count=2 if status == "WARNING" else 0,
+        error_count=2 if status == "FAIL" else 0,
+    )
+
+    result = agent.analyze(
+        kpi_result,
+        finance_rules_result=finance_rules_result,
+    )
+
+    assert any(expected_comment in x for x in result.control_commentary)
+
+    if expected_attention is None:
+        assert not any("finance-control" in x.lower() for x in result.management_attention)
+    else:
+        assert any(expected_attention in x for x in result.management_attention)
+
+
+def test_operational_thresholds_create_positive_driver_and_risk():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi(
+            "fulfillment_percentage",
+            "Fulfillment Percentage",
+            96.0,
+            "percentage",
+        ),
+        make_kpi(
+            "cancellation_percentage",
+            "Cancellation Percentage",
+            12.0,
+            "percentage",
+        ),
+    )
+
+    result = agent.analyze(kpi_result)
+
+    assert "Fulfillment performance was strong." in result.positive_drivers
+    assert "Cancellation is high and may require operational action." in result.risks
+
+
+def test_unknown_and_unavailable_kpis_require_management_attention():
+    agent = CommentaryAgent()
+    kpi_result = make_kpi_result(
+        make_kpi("actual_revenue", "Actual Revenue", 1_000_000, "currency"),
+        unavailable_kpis=["gross_profit"],
+        unknown_kpis=["abc_metric"],
+    )
+
+    result = agent.analyze(kpi_result)
+
+    assert "Some requested KPIs were unavailable." in result.management_attention
+    assert "Some requested KPI names were not recognized." in result.management_attention
