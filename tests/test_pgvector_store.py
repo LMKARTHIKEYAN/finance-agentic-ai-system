@@ -1168,13 +1168,13 @@ def test_integration_upsert_document(
         document_id="forecast_chunk_1",
     )
 
-    assert updated.text == "Updated forecast"
+    assert updated.text == "Updated forecast."
 
     retrieved = integration_store.get_document(
         "forecast_chunk_1"
     )
 
-    assert retrieved.text == "Updated forecast"
+    assert retrieved.text == "Updated forecast."
     assert retrieved.metadata == {
         "version": "2",
     }

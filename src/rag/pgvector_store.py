@@ -730,7 +730,8 @@ class PGVectorStore(InMemoryVectorStore):
 
         try:
             with self._connection() as connection:
-                connection.executemany(
+                with connection.cursor() as cursor:
+                 cursor.executemany(
                     query,
                     values,
                 )
