@@ -3,3 +3,5 @@ openpyxl
 python-dotenv
 pypdf
 langgraph
+psycopg[binary]
+pgvector
