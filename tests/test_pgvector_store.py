@@ -32,6 +32,8 @@ from typing import Any
 
 import pytest
 
+from collections.abc import Generator
+
 from src.rag.embeddings import (
     BaseEmbeddingService,
     DeterministicEmbeddingService,
@@ -1000,7 +1002,12 @@ def get_integration_dsn() -> str | None:
 
 
 @pytest.fixture
-def integration_store() -> PGVectorStore:
+def integration_store() -> Generator[
+    PGVectorStore,
+    None,
+    None,
+]:
+    
     """
     Create an isolated real PostgreSQL vector store.
 
