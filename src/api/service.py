@@ -1,0 +1,496 @@
+"""
+Application service for the Finance Agentic AI API.
+
+This module coordinates the existing:
+
+- LangGraph workflow
+- Finance agents
+- RAG agent
+- Retriever
+
+It does not contain finance business calculations.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, is_dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable
+
+import pandas as pd
+
+from src.orchestrator.graph import run_finance_graph
+from src.orchestrator.router import identify_flow
+from src.orchestrator.state import FinanceGraphState
+from src.rag.rag_agent import FinanceRAGAgent
+
+
+class FinanceAskServiceError(RuntimeError):
+    """
+    Raised when the API service cannot complete a finance request.
+    """
+
+
+@dataclass(frozen=True)
+class FinanceDataPaths:
+    """
+    Paths to local datasets used by the LangGraph workflow.
+
+    These local CSV files are suitable for the GitHub interview project.
+
+    Production systems can later replace these files with:
+
+    - Snowflake
+    - Amazon S3
+    - Database tables
+    - Uploaded user files
+    """
+
+    operations: Path
+    budget: Path
+    assumptions: Path
+
+
+@dataclass(frozen=True)
+class AskServiceResult:
+    """
+    Framework-independent result returned by FinanceAskService.
+
+    FastAPI schemas are not used here so this service remains reusable by:
+
+    - FastAPI
+    - Streamlit
+    - Command-line applications
+    - Future background jobs
+    """
+
+    answer: str
+    sources: list[dict[str, Any]]
+    selected_flow: str
+    execution_status: str
+    used_fallback: bool
+
+
+GraphExecutor = Callable[
+    [FinanceGraphState],
+    FinanceGraphState,
+]
+
+
+class FinanceAskService:
+    """
+    Coordinate LangGraph execution and RAG response generation.
+
+    Processing flow:
+
+        User question
+            │
+            ▼
+        Identify finance flow
+            │
+            ▼
+        Load required local datasets
+            │
+            ▼
+        Execute existing LangGraph workflow
+            │
+            ▼
+        Collect existing finance-agent results
+            │
+            ▼
+        Send results to existing RAG agent
+            │
+            ▼
+        Return answer and sources
+    """
+
+    def __init__(
+        self,
+        rag_agent: FinanceRAGAgent,
+        data_paths: FinanceDataPaths,
+        graph_executor: GraphExecutor = run_finance_graph,
+    ) -> None:
+        """
+        Initialize the application service.
+
+        Args:
+            rag_agent:
+                Existing FinanceRAGAgent instance.
+
+            data_paths:
+                Paths to local operations, budget and assumptions files.
+
+            graph_executor:
+                Existing LangGraph execution function. This is injectable
+                so unit tests can use a fake graph executor.
+
+        Raises:
+            TypeError:
+                If any dependency is invalid.
+        """
+
+        if not hasattr(rag_agent, "run"):
+            raise TypeError(
+                "rag_agent must provide a callable run method."
+            )
+        
+        if not callable(rag_agent.run):
+            raise TypeError(
+                "rag_agent.run must be callable."
+            )
+
+        if not isinstance(data_paths, FinanceDataPaths):
+            raise TypeError(
+                "data_paths must be FinanceDataPaths."
+            )
+
+        if not callable(graph_executor):
+            raise TypeError(
+                "graph_executor must be callable."
+            )
+
+        self._rag_agent = rag_agent
+        self._data_paths = data_paths
+        self._graph_executor = graph_executor
+
+    def ask(
+        self,
+        question: str,
+        *,
+        top_k: int | None = None,
+        score_threshold: float | None = None,
+        metadata_filter: dict[str, Any] | None = None,
+    ) -> AskServiceResult:
+        """
+        Answer one finance question.
+
+        Args:
+            question:
+                Natural-language finance question.
+
+            top_k:
+                Maximum number of RAG documents to retrieve.
+
+            score_threshold:
+                Optional minimum vector similarity score.
+
+            metadata_filter:
+                Optional document metadata filter.
+
+        Returns:
+            Structured AskServiceResult.
+
+        Raises:
+            FinanceAskServiceError:
+                If LangGraph or RAG execution fails.
+        """
+
+        cleaned_question = self._validate_question(
+            question
+        )
+
+        graph_state = self._build_graph_state(
+            cleaned_question
+        )
+
+        try:
+            graph_result = self._graph_executor(
+                graph_state
+            )
+        except Exception as exc:
+            raise FinanceAskServiceError(
+                f"Finance graph execution failed: {exc}"
+            ) from exc
+
+        execution_status = graph_result.get(
+            "execution_status",
+            "failed",
+        )
+
+        if execution_status == "failed":
+            error_message = (
+                graph_result.get("error_message")
+                or "Finance graph execution failed."
+            )
+
+            raise FinanceAskServiceError(
+                error_message
+            )
+
+        finance_analysis = (
+            self._extract_finance_analysis(
+                graph_result
+            )
+        )
+
+        try:
+            rag_result = self._rag_agent.run(
+                user_request=cleaned_question,
+                finance_analysis=finance_analysis,
+                retrieval_query=cleaned_question,
+                top_k=top_k,
+                score_threshold=score_threshold,
+                metadata_filter=metadata_filter or {},
+            )
+        except Exception as exc:
+            raise FinanceAskServiceError(
+                f"RAG answer generation failed: {exc}"
+            ) from exc
+
+        sources = [
+            {
+                "id": item.document.id,
+                "score": float(item.score),
+                "rank": item.rank,
+                "metadata": dict(
+                    item.document.metadata
+                ),
+                "excerpt": self._excerpt(
+                    item.document.text
+                ),
+            }
+            for item
+            in rag_result.retrieval_result.documents
+        ]
+
+        return AskServiceResult(
+            answer=rag_result.response,
+            sources=sources,
+            selected_flow=str(
+                graph_result.get(
+                    "selected_flow",
+                    "unknown",
+                )
+            ),
+            execution_status=str(
+                execution_status
+            ),
+            used_fallback=rag_result.used_fallback,
+        )
+
+    def _build_graph_state(
+        self,
+        question: str,
+    ) -> FinanceGraphState:
+        """
+        Build the initial state required by LangGraph.
+
+        The router identifies which workflow is required. Only the datasets
+        required by that selected workflow are loaded.
+        """
+
+        selected_flow = identify_flow(
+            question
+        )
+
+        state: FinanceGraphState = {
+            "user_request": question,
+            "selected_flow": selected_flow,
+            "execution_status": "pending",
+            "errors": [],
+            "error_message": "",
+            "failed_node": "",
+            "executed_nodes": [],
+            "filters": {},
+            "group_by": "month",
+            "frequency": "month",
+            "rolling_window": 3,
+            "forecast_periods": 6,
+            "scenario_name": "Management Case",
+        }
+
+        operations_flows = {
+            "kpi",
+            "forecast",
+            "variance",
+            "scenario",
+            "full",
+        }
+
+        budget_flows = {
+            "budget",
+            "variance",
+            "full",
+        }
+
+        assumption_flows = {
+            "scenario",
+            "full",
+        }
+
+        if selected_flow in operations_flows:
+            state["operations_data"] = (
+                self._load_csv(
+                    self._data_paths.operations
+                )
+            )
+
+        if selected_flow in budget_flows:
+            state["budget_data"] = (
+                self._load_csv(
+                    self._data_paths.budget
+                )
+            )
+
+        if selected_flow in assumption_flows:
+            state["business_assumptions"] = (
+                self._load_csv(
+                    self._data_paths.assumptions
+                )
+            )
+
+        return state
+
+    @staticmethod
+    def _load_csv(
+        path: Path,
+    ) -> pd.DataFrame:
+        """
+        Load one CSV file.
+
+        Raises:
+            FinanceAskServiceError:
+                If the required file does not exist.
+        """
+
+        if not path.exists():
+            raise FinanceAskServiceError(
+                f"Required data file not found: {path}"
+            )
+
+        try:
+            return pd.read_csv(path)
+        except Exception as exc:
+            raise FinanceAskServiceError(
+                f"Unable to load data file "
+                f"'{path}': {exc}"
+            ) from exc
+
+    @staticmethod
+    def _extract_finance_analysis(
+        state: FinanceGraphState,
+    ) -> dict[str, Any]:
+        """
+        Extract existing finance-agent outputs from graph state.
+
+        No financial calculation occurs here. The method only converts
+        existing results into JSON-compatible structures for RAG.
+        """
+
+        result_fields = (
+            "operations_result",
+            "budget_result",
+            "forecast_result",
+            "scenario_result",
+            "variance_result",
+            "finance_rules_result",
+            "anomaly_result",
+            "root_cause_result",
+            "recommendation_result",
+            "kpi_result",
+            "commentary_result",
+            "report_result",
+        )
+
+        return {
+            field_name: FinanceAskService._serialize(
+                state[field_name]
+            )
+            for field_name in result_fields
+            if state.get(field_name) is not None
+        }
+
+    @staticmethod
+    def _serialize(
+        value: Any,
+    ) -> Any:
+        """
+        Convert agent results into JSON-compatible Python values.
+        """
+
+        if is_dataclass(value):
+            return FinanceAskService._serialize(
+                asdict(value)
+            )
+
+        if isinstance(value, pd.DataFrame):
+            return value.to_dict(
+                orient="records"
+            )
+
+        if isinstance(value, pd.Series):
+            return value.to_dict()
+
+        if isinstance(value, Enum):
+            return value.value
+
+        if isinstance(value, dict):
+            return {
+                str(key): FinanceAskService._serialize(
+                    item
+                )
+                for key, item in value.items()
+            }
+
+        if isinstance(
+            value,
+            (list, tuple, set),
+        ):
+            return [
+                FinanceAskService._serialize(item)
+                for item in value
+            ]
+
+        if (
+            hasattr(value, "item")
+            and callable(value.item)
+        ):
+            try:
+                return value.item()
+            except (ValueError, TypeError):
+                pass
+
+        return value
+
+    @staticmethod
+    def _validate_question(
+        question: str,
+    ) -> str:
+        """
+        Validate and clean the submitted question.
+        """
+
+        if not isinstance(question, str):
+            raise TypeError(
+                "question must be a string."
+            )
+
+        cleaned_question = question.strip()
+
+        if not cleaned_question:
+            raise ValueError(
+                "question cannot be empty."
+            )
+
+        return cleaned_question
+
+    @staticmethod
+    def _excerpt(
+        text: str,
+        limit: int = 300,
+    ) -> str:
+        """
+        Produce a short single-line excerpt for an API source.
+        """
+
+        cleaned_text = " ".join(
+            text.split()
+        )
+
+        if len(cleaned_text) <= limit:
+            return cleaned_text
+
+        return (
+            f"{cleaned_text[: limit - 3]}..."
+        )
