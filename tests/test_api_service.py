@@ -24,6 +24,7 @@ from src.api.service import (
     FinanceAskServiceError,
     FinanceDataPaths,
 )
+from src.rag.prompt_templates import PromptType
 
 
 class FakeDocument:
@@ -57,6 +58,11 @@ class FakeRetrievedItem:
 class FakeRAGAgent:
     """Fake RAG agent used only for service tests."""
 
+    def __init__(self) -> None:
+        """Initialize captured request attributes."""
+
+        self.received_prompt_type: PromptType | None = None
+
     def run(
         self,
         *,
@@ -66,7 +72,10 @@ class FakeRAGAgent:
         top_k: int | None = None,
         score_threshold: float | None = None,
         metadata_filter: dict | None = None,
+        prompt_type: PromptType | str | None = None,
     ):
+        self.received_prompt_type = prompt_type
+
         document = FakeDocument(
             document_id="chunk_001",
             text=(
@@ -168,8 +177,10 @@ def test_service_returns_structured_result(
     source information and execution details.
     """
 
+    rag_agent = FakeRAGAgent()
+
     service = FinanceAskService(
-        rag_agent=FakeRAGAgent(),
+        rag_agent=rag_agent,
         data_paths=data_paths,
         graph_executor=fake_graph_executor,
     )
@@ -192,12 +203,52 @@ def test_service_returns_structured_result(
     assert result.selected_flow == "variance"
     assert result.execution_status == "completed"
     assert result.used_fallback is False
+    assert (
+        rag_agent.received_prompt_type
+        is PromptType.VARIANCE_ANALYSIS
+    )
 
     assert len(result.sources) == 1
     assert result.sources[0]["id"] == "chunk_001"
     assert result.sources[0]["rank"] == 1
     assert result.sources[0]["score"] == 0.95
 
+
+
+@pytest.mark.parametrize(
+    ("selected_flow", "expected_prompt_type"),
+    [
+        ("kpi", PromptType.KPI_EXPLANATION),
+        ("budget", PromptType.BUDGET_ANALYSIS),
+        ("forecast", PromptType.FORECAST_ANALYSIS),
+        ("variance", PromptType.VARIANCE_ANALYSIS),
+        ("root_cause", PromptType.ROOT_CAUSE_ANALYSIS),
+        ("scenario", PromptType.SCENARIO_ANALYSIS),
+        ("recommendation", PromptType.RECOMMENDATION),
+        ("commentary", PromptType.COMMENTARY),
+        ("full", PromptType.COMMENTARY),
+        ("unknown", PromptType.FINANCE_QA),
+    ],
+)
+def test_resolve_prompt_type_maps_finance_flows(
+    selected_flow: str,
+    expected_prompt_type: PromptType,
+) -> None:
+    """Each finance flow should use its matching RAG prompt."""
+
+    assert (
+        FinanceAskService._resolve_prompt_type(selected_flow)
+        is expected_prompt_type
+    )
+
+
+def test_resolve_prompt_type_normalizes_input() -> None:
+    """Flow mapping should tolerate spaces and letter case."""
+
+    assert (
+        FinanceAskService._resolve_prompt_type("  VARIANCE  ")
+        is PromptType.VARIANCE_ANALYSIS
+    )
 
 def test_service_rejects_empty_question(
     data_paths: FinanceDataPaths,

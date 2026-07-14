@@ -23,6 +23,7 @@ import pandas as pd
 from src.orchestrator.graph import run_finance_graph
 from src.orchestrator.router import identify_flow
 from src.orchestrator.state import FinanceGraphState
+from src.rag.prompt_templates import PromptType
 from src.rag.rag_agent import FinanceRAGAgent
 
 
@@ -218,6 +219,20 @@ class FinanceAskService:
                 error_message
             )
 
+        selected_flow = str(
+            graph_result.get(
+                "selected_flow",
+                graph_state.get(
+                    "selected_flow",
+                    "unknown",
+                ),
+            )
+        )
+
+        prompt_type = self._resolve_prompt_type(
+            selected_flow
+        )
+
         finance_analysis = (
             self._extract_finance_analysis(
                 graph_result
@@ -232,6 +247,7 @@ class FinanceAskService:
                 top_k=top_k,
                 score_threshold=score_threshold,
                 metadata_filter=metadata_filter or {},
+                prompt_type=prompt_type,
             )
         except Exception as exc:
             raise FinanceAskServiceError(
@@ -257,12 +273,7 @@ class FinanceAskService:
         return AskServiceResult(
             answer=rag_result.response,
             sources=sources,
-            selected_flow=str(
-                graph_result.get(
-                    "selected_flow",
-                    "unknown",
-                )
-            ),
+            selected_flow=selected_flow,
             execution_status=str(
                 execution_status
             ),
@@ -341,6 +352,41 @@ class FinanceAskService:
             )
 
         return state
+
+    @staticmethod
+    def _resolve_prompt_type(
+        selected_flow: str,
+    ) -> PromptType:
+        """
+        Map a LangGraph finance flow to its matching RAG prompt type.
+
+        The LangGraph router identifies the analysis workflow, while the RAG
+        prompt type controls how OpenAI structures the final answer. Keeping
+        this mapping in the application service prevents generic finance-Q&A
+        prompts from being used for specialist FP&A workflows.
+
+        Unknown or broad flows safely fall back to the general finance Q&A
+        prompt.
+        """
+
+        normalized_flow = str(selected_flow).strip().lower()
+
+        prompt_type_by_flow = {
+            "kpi": PromptType.KPI_EXPLANATION,
+            "budget": PromptType.BUDGET_ANALYSIS,
+            "forecast": PromptType.FORECAST_ANALYSIS,
+            "variance": PromptType.VARIANCE_ANALYSIS,
+            "root_cause": PromptType.ROOT_CAUSE_ANALYSIS,
+            "scenario": PromptType.SCENARIO_ANALYSIS,
+            "recommendation": PromptType.RECOMMENDATION,
+            "commentary": PromptType.COMMENTARY,
+            "full": PromptType.COMMENTARY,
+        }
+
+        return prompt_type_by_flow.get(
+            normalized_flow,
+            PromptType.FINANCE_QA,
+        )
 
     @staticmethod
     def _load_csv(
