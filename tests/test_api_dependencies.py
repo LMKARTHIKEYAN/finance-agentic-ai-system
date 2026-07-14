@@ -56,15 +56,15 @@ def test_build_data_paths_uses_default_paths(
     )
 
     assert data_paths.operations == Path(
-        "data/operations.csv"
+        "data/operations/sample_orders.csv"
     )
 
     assert data_paths.budget == Path(
-        "data/budget.csv"
+        "data/planning/sample_budget.csv"
     )
 
     assert data_paths.assumptions == Path(
-        "data/assumptions.csv"
+        "data/assumptions/business_assumptions.csv"
     )
 
 

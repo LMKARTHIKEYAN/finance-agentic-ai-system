@@ -5,3 +5,5 @@ pypdf
 langgraph
 psycopg[binary]
 pgvector
+streamlit
+openai
