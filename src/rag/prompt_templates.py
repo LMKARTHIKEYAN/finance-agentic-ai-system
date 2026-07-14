@@ -29,19 +29,31 @@ Follow these rules:
 4. Do not invent financial values, assumptions, causes, risks, policies, or
    recommendations.
 5. Do not perform calculations or recalculate metrics, effects, percentages,
-   forecasts, or scenarios.
-6. Clearly distinguish reported facts, supported interpretations, and data
-   limitations.
-7. Prioritize material drivers, exceptions, risks, and management actions.
-8. Explain favourable and unfavourable performance in business language.
-9. Preserve the units, periods, currencies, signs, and labels supplied by the
-   analysis.
-10. Do not describe correlation as confirmed causation without evidence.
-11. Do not provide investment advice.
-12. Use professional, concise, enterprise management-reporting language.
-13. Avoid generic filler, repetition, and unsupported conclusions.
-14. Keep every conclusion traceable to the supplied evidence.
-15. When a requested value or section is unavailable, write "Not available in
+   forecasts, scenarios, ratios, currency conversions, or unit conversions.
+6. Preserve every supplied financial value exactly as provided, including its
+   currency, unit, scale, sign, decimal precision, period, and label.
+7. Never convert rupees into lakhs or crores, or values into thousands,
+   millions, or billions, unless the supplied finance analysis explicitly
+   contains that converted value.
+8. Never infer a financial unit from the size of a number. A raw numeric value
+   without an explicit unit must remain in its supplied scale and must not be
+   labelled as rupees, lakhs, crores, thousands, millions, or billions.
+9. When both a raw value and a preformatted display value are supplied, use the
+   supplied display value. Do not create a new formatted or abbreviated value.
+10. Use the same exact value consistently in the executive summary, detailed
+    sections, tables, commentary, recommendations, and conclusions.
+11. If two supplied values conflict, report the conflict as a data-quality
+    issue. Do not choose one value or reconcile them yourself.
+12. Clearly distinguish reported facts, supported interpretations, and data
+    limitations.
+13. Prioritize material drivers, exceptions, risks, and management actions.
+14. Explain favourable and unfavourable performance in business language.
+15. Do not describe correlation as confirmed causation without evidence.
+16. Do not provide investment advice.
+17. Use professional, concise, enterprise management-reporting language.
+18. Avoid generic filler, repetition, and unsupported conclusions.
+19. Keep every conclusion traceable to the supplied evidence.
+20. When a requested value or section is unavailable, write "Not available in
     the supplied analysis" rather than estimating it.
 """.strip()
 
@@ -393,6 +405,21 @@ the variance explanation.
 Confirm whether the bridge reconciles to the reported total variance and
 surface any validation issue. Use only calculations already present in the
 analysis. Do not infer missing effects or force a reconciliation.
+
+Numerical presentation rules:
+
+- Copy actual, comparison, variance, percentage, and bridge-effect values
+  exactly from the supplied finance analysis.
+- Do not independently convert values into lakhs, crores, thousands,
+  millions, or billions.
+- Do not add a currency symbol or financial unit unless that symbol or unit is
+  explicitly supplied by the finance analysis.
+- If a preformatted display value is available, use it instead of formatting
+  the raw number.
+- Ensure the Executive Summary uses the same exact financial values and units
+  shown in the Financial Performance and Variance Bridge sections.
+- If the supplied context contains conflicting values or units, identify the
+  conflict under Data Limitations rather than selecting or recalculating one.
 """.strip(),
     output_format="""
 Return:
