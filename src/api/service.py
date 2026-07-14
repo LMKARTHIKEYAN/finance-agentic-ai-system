@@ -20,6 +20,9 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from src.api.finance_response_context import (
+    build_finance_response_context,
+)
 from src.orchestrator.graph import run_finance_graph
 from src.orchestrator.router import identify_flow
 from src.orchestrator.state import FinanceGraphState
@@ -100,7 +103,10 @@ class FinanceAskService:
         Collect existing finance-agent results
             │
             ▼
-        Send results to existing RAG agent
+        Build flow-aware response context
+            │
+            ▼
+        Send structured context to existing RAG agent
             │
             ▼
         Return answer and sources
@@ -233,10 +239,15 @@ class FinanceAskService:
             selected_flow
         )
 
-        finance_analysis = (
+        raw_finance_analysis = (
             self._extract_finance_analysis(
                 graph_result
             )
+        )
+
+        finance_analysis = build_finance_response_context(
+            selected_flow=selected_flow,
+            finance_analysis=raw_finance_analysis,
         )
 
         try:
