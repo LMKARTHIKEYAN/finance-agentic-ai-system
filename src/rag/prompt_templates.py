@@ -14,23 +14,35 @@ from typing import Any, Mapping, Sequence
 
 
 DEFAULT_SYSTEM_PROMPT = """
-You are an enterprise FP&A assistant.
+You are an enterprise FP&A assistant supporting CFOs, Finance Directors,
+and FP&A Managers.
 
-Your role is to explain finance results clearly, accurately, and concisely
-for management users.
+Your role is to convert validated finance-agent outputs into concise,
+decision-ready management analysis.
 
 Follow these rules:
 
-1. Use only the supplied finance analysis and retrieved context.
-2. Do not invent financial values, assumptions, policies, or explanations.
-3. Clearly distinguish facts from interpretations.
-4. Highlight material business drivers.
-5. Explain favourable and unfavourable performance.
-6. Mention data limitations when evidence is incomplete.
-7. Do not perform calculations that are not already present in the analysis.
-8. Do not provide investment advice.
-9. Use professional management-reporting language.
-10. Keep conclusions traceable to the supplied evidence.
+1. Use only the supplied finance analysis and retrieved reference context.
+2. Treat finance-agent outputs as the primary source of financial truth.
+3. Use retrieved context only to explain policies, assumptions, definitions,
+   or other reference information that directly supports the answer.
+4. Do not invent financial values, assumptions, causes, risks, policies, or
+   recommendations.
+5. Do not perform calculations or recalculate metrics, effects, percentages,
+   forecasts, or scenarios.
+6. Clearly distinguish reported facts, supported interpretations, and data
+   limitations.
+7. Prioritize material drivers, exceptions, risks, and management actions.
+8. Explain favourable and unfavourable performance in business language.
+9. Preserve the units, periods, currencies, signs, and labels supplied by the
+   analysis.
+10. Do not describe correlation as confirmed causation without evidence.
+11. Do not provide investment advice.
+12. Use professional, concise, enterprise management-reporting language.
+13. Avoid generic filler, repetition, and unsupported conclusions.
+14. Keep every conclusion traceable to the supplied evidence.
+15. When a requested value or section is unavailable, write "Not available in
+    the supplied analysis" rather than estimating it.
 """.strip()
 
 
@@ -180,22 +192,27 @@ FINANCE_QA_TEMPLATE = PromptTemplate(
     prompt_type=PromptType.FINANCE_QA,
     title="Finance Question Answering",
     instructions="""
-Answer the user's finance question using only the supplied finance analysis
-and retrieved reference context.
+Answer the user's finance question using the supplied finance-agent outputs
+as the primary evidence.
 
-Explain the answer in business language. Cite the relevant source document
-identifiers when retrieved context is used.
+Identify the exact result, period, entity, comparison basis, and business
+context relevant to the question. Use retrieved reference context only when
+it directly supports the explanation, and cite its source identifiers.
 
-When the answer is not supported by the supplied evidence, state that there
-is insufficient information.
+Prefer specific values and named drivers over generic descriptions. Where
+multiple agent outputs are relevant, combine them without duplicating the
+same point. When evidence is missing, state precisely what is unavailable.
 """.strip(),
     output_format="""
-Return:
+Return these sections when supported by the evidence:
 
-1. Direct answer
-2. Supporting evidence
-3. Business interpretation
-4. Data limitations, if any
+Direct answer / Executive Answer
+Key Financial Evidence
+Business Interpretation
+Risks or Exceptions
+Recommended Management Attention
+Source References
+Data Limitations
 """.strip(),
 )
 
@@ -204,28 +221,31 @@ COMMENTARY_TEMPLATE = PromptTemplate(
     prompt_type=PromptType.COMMENTARY,
     title="Management Commentary",
     instructions="""
-Create management commentary for the supplied finance analysis.
+Create concise management commentary from the supplied finance-agent outputs.
 
-Focus on:
+Synthesize overall performance, material favourable and unfavourable
+movements, price-volume-mix or cost-margin drivers, anomalies, supported root
+causes, recommendations, risks, and outlook. Prioritize material insights and
+do not repeat every number.
 
-- Overall performance
-- Material favourable and unfavourable movements
-- Main price, volume, mix, cost, margin, budget, or forecast drivers
-- Relevant anomalies and root causes
-- Business impact
-- Management attention areas
-
-Use retrieved context only when it directly supports the commentary.
-
-Do not repeat every number. Prioritize material insights.
+Use retrieved context only when it directly supports a policy, assumption, or
+business explanation. Clearly label evidence gaps and avoid unsupported
+causal claims.
 """.strip(),
     output_format="""
-Return the commentary using these sections:
+Return:
 
 Executive Summary
+Financial Performance
 Key Performance Drivers
+Material Favourable Drivers
+Material Unfavourable Drivers
+Root Causes and Business Impact
 Risks and Exceptions
-Management Outlook
+Management Actions
+Outlook
+Source References
+Data Limitations
 """.strip(),
 )
 
@@ -265,27 +285,28 @@ KPI_EXPLANATION_TEMPLATE = PromptTemplate(
     prompt_type=PromptType.KPI_EXPLANATION,
     title="KPI Performance Explanation",
     instructions="""
-Explain the supplied KPI results.
+Explain the supplied KPI results for management decision-making.
 
-Identify:
+Identify the reporting period, comparison basis, actual value, target or
+benchmark, variance or status, strongest and weakest KPIs, material trends,
+relationships between KPIs, supported drivers, anomalies, and management
+attention areas.
 
-- KPI performance against target, budget, forecast, or prior period
-- Strongest and weakest KPIs
-- Material trends
-- Potential business drivers
-- KPI relationships
-- Areas requiring management attention
-
-Do not calculate new KPI values.
+Use KPI results as the primary evidence and supporting agent outputs only when
+they directly explain a KPI movement. Do not calculate missing KPI values.
 """.strip(),
     output_format="""
 Return:
 
-KPI Summary
+Executive KPI Summary
+KPI Scorecard
 Positive Performance
-Negative Performance
-Key Drivers
-Management Attention
+Underperformance and Exceptions
+Key Drivers and KPI Relationships
+Business Impact
+Management Actions
+Source References
+Data Limitations
 """.strip(),
 )
 
@@ -294,27 +315,29 @@ BUDGET_ANALYSIS_TEMPLATE = PromptTemplate(
     prompt_type=PromptType.BUDGET_ANALYSIS,
     title="Budget Analysis",
     instructions="""
-Explain the supplied budget analysis.
+Explain the supplied budget outputs for management review.
 
-Focus on:
+Identify the budget period, major revenue and cost allocations, profitability
+or margin expectations, key assumptions, material concentrations, validation
+or approval issues, operational constraints, risks, opportunities, and
+required management actions.
 
-- Major budget allocations
-- Key assumptions
-- Budget risks
-- Cost or revenue concentration
-- Potential operational constraints
-- Areas requiring validation or approval
-
-Do not modify the budget or create unsupported assumptions.
+Use budget-agent and finance-rules outputs as primary evidence. Do not alter
+the budget, create assumptions, or estimate missing values.
 """.strip(),
     output_format="""
 Return:
 
-Budget Summary
+Executive Budget Summary
+Budget Profile and Major Allocations
+Revenue, Cost, Profit, and Margin View
 Key Assumptions
-Risks
-Opportunities
+Concentration and Constraint Analysis
+Risks and Opportunities
+Validation or Approval Matters
 Management Actions
+Source References
+Data Limitations
 """.strip(),
 )
 
@@ -323,28 +346,30 @@ FORECAST_ANALYSIS_TEMPLATE = PromptTemplate(
     prompt_type=PromptType.FORECAST_ANALYSIS,
     title="Forecast Analysis",
     instructions="""
-Explain the supplied forecast result.
+Explain the supplied forecast outputs for management decision-making.
 
-Focus on:
+Identify the forecast horizon, expected revenue, cost, profit, margin, or KPI
+outcomes, trend direction, major forecast drivers, differences from budget or
+prior forecast, assumption sensitivity, uncertainty, risks to delivery,
+anomalies, and monitoring indicators.
 
-- Expected performance
-- Major forecast drivers
-- Differences from budget or prior forecast
-- Risks to forecast delivery
-- Sensitivity to assumptions
-- Areas requiring monitoring
-
-Clearly identify whether conclusions come from forecast data or retrieved
-reference context.
+Clearly distinguish forecast-agent outputs from retrieved reference context.
+Do not extend the forecast, create new assumptions, or calculate missing
+values.
 """.strip(),
     output_format="""
 Return:
 
-Forecast Summary
-Key Drivers
+Executive Forecast Summary
+Forecast Horizon and Expected Performance
+Budget or Prior-Forecast Comparison
+Key Forecast Drivers
+Assumptions and Sensitivities
 Risks and Uncertainty
 Monitoring Indicators
-Management Outlook
+Management Actions and Outlook
+Source References
+Data Limitations
 """.strip(),
 )
 
@@ -354,29 +379,51 @@ VARIANCE_ANALYSIS_TEMPLATE = PromptTemplate(
     title="Variance Analysis",
     instructions="""
 Explain the supplied actual-versus-budget, actual-versus-forecast, or
-actual-versus-prior-period variance analysis.
+actual-versus-prior-period variance outputs for CFO and FP&A review.
 
-Focus on:
+Identify the metric, entity, period, comparison basis, actual value, comparison
+value, absolute variance, percentage variance, and favourable or unfavourable
+status when supplied.
 
-- Total variance
-- Price effect
-- Volume effect
-- Mix effect
-- Cost effect
-- Margin effect
-- Main favourable and unfavourable contributors
-- Reconciliation or validation issues
+Explain the supplied price, volume, mix, quantity, cost, margin, rate,
+efficiency, or other bridge effects. Use anomaly, root-cause,
+recommendation, KPI, commentary, and report outputs when they directly support
+the variance explanation.
 
-Use only variance calculations already supplied.
+Confirm whether the bridge reconciles to the reported total variance and
+surface any validation issue. Use only calculations already present in the
+analysis. Do not infer missing effects or force a reconciliation.
 """.strip(),
     output_format="""
 Return:
 
-Variance Summary
+Executive Summary
+Financial Performance
+- Actual value
+- Budget, forecast, or prior-period value
+- Absolute variance
+- Variance percentage
+- Favourable or unfavourable status
+
+Variance Bridge
+- Price effect
+- Volume or quantity effect
+- Mix effect
+- Cost, margin, rate, efficiency, or other supplied effects
+- Reconciliation status
+
 Favourable Drivers
 Unfavourable Drivers
-Reconciliation Status
-Management Interpretation
+Root-Cause Assessment
+Business Impact
+Recommendations and Management Actions
+Risks and Monitoring Indicators
+Management Commentary
+Source References
+Data Limitations
+
+For any unavailable requested item, write "Not available in the supplied
+analysis". Do not omit the limitation or invent a value.
 """.strip(),
 )
 
@@ -413,28 +460,31 @@ SCENARIO_ANALYSIS_TEMPLATE = PromptTemplate(
     prompt_type=PromptType.SCENARIO_ANALYSIS,
     title="Scenario Analysis",
     instructions="""
-Explain the supplied scenario-analysis results.
+Explain and compare the supplied scenario-analysis outputs.
 
-Compare scenarios using the supplied outputs and assumptions.
+Identify each scenario, the assumptions that change, and the supplied impact
+on revenue, cost, profit, margin, cash, or KPIs. Compare base, upside,
+downside, management, or other named scenarios without assuming that all
+three standard scenarios exist.
 
-Focus on:
-
-- Base, upside, and downside outcomes
-- Main changing assumptions
-- Revenue, cost, profit, and margin impact
-- Key risks
-- Decision implications
-
-Do not create new scenarios or recalculate existing scenarios.
+Highlight sensitivities, breakpoints, risks, opportunities, decision
+implications, and monitoring triggers supported by the analysis. Do not create
+new scenarios or recalculate existing scenarios.
 """.strip(),
     output_format="""
 Return:
 
+Executive Scenario Summary
 Scenario Comparison
 Key Assumption Changes
-Financial Impact
-Risks
+Revenue, Cost, Profit, Margin, and KPI Impact
+Sensitivity and Key Breakpoints
+Risks and Opportunities
 Decision Implications
+Recommended Management Actions
+Monitoring Triggers
+Source References
+Data Limitations
 """.strip(),
 )
 
