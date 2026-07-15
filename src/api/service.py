@@ -24,6 +24,10 @@ from src.api.finance_response_context import (
     build_finance_response_context,
 )
 from src.orchestrator.graph import run_finance_graph
+from src.orchestrator.planner import (
+    create_execution_plan,
+    validate_plan_against_state,
+)
 from src.orchestrator.router import identify_flow
 from src.orchestrator.state import FinanceGraphState
 from src.rag.prompt_templates import PromptType
@@ -95,6 +99,9 @@ class FinanceAskService:
             │
             ▼
         Load required local datasets
+            │
+            ▼
+        Create and validate execution plan
             │
             ▼
         Execute existing LangGraph workflow
@@ -201,6 +208,35 @@ class FinanceAskService:
             cleaned_question
         )
 
+        selected_flow = str(
+            graph_state.get(
+                "selected_flow",
+                "unknown",
+            )
+        )
+
+        try:
+            execution_plan = create_execution_plan(
+                selected_flow
+            )
+        except (TypeError, ValueError) as exc:
+            raise FinanceAskServiceError(
+                f"Unable to create finance execution plan: {exc}"
+            ) from exc
+
+        missing_fields = validate_plan_against_state(
+            execution_plan,
+            graph_state,
+        )
+
+        if missing_fields:
+            missing_text = ", ".join(missing_fields)
+
+            raise FinanceAskServiceError(
+                "Finance workflow is missing required state fields: "
+                f"{missing_text}."
+            )
+
         try:
             graph_result = self._graph_executor(
                 graph_state
@@ -228,10 +264,7 @@ class FinanceAskService:
         selected_flow = str(
             graph_result.get(
                 "selected_flow",
-                graph_state.get(
-                    "selected_flow",
-                    "unknown",
-                ),
+                selected_flow,
             )
         )
 
