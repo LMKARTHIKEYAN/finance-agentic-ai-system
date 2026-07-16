@@ -28,6 +28,7 @@ from src.api.dependencies import get_finance_service
 from src.api.schemas import (
     AskRequest,
     AskResponse,
+    DashboardPayload,
     SourceResponse,
 )
 from src.api.service import (
@@ -92,7 +93,8 @@ def ask_finance_question(
             FinanceAskService provided through FastAPI dependency injection.
 
     Returns:
-        Structured answer, sources and workflow execution information.
+        Structured answer, dashboard data, sources and workflow
+        execution information.
 
     Raises:
         HTTPException:
@@ -149,10 +151,15 @@ def ask_finance_question(
         for source in result.sources
     ]
 
+    dashboard = DashboardPayload.model_validate(
+        result.dashboard
+    )
+
     return AskResponse(
         answer=result.answer,
         sources=sources,
         selected_flow=result.selected_flow,
         execution_status=result.execution_status,
         used_fallback=result.used_fallback,
+        dashboard=dashboard,
     )
