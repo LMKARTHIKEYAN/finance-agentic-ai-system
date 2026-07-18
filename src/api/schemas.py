@@ -496,6 +496,38 @@ class DashboardPayload(BaseModel):
 
     unavailable_sections: list[str] = Field(default_factory=list)
 
+class ParsedPeriodResponse(BaseModel):
+    """Period parsed from the user's natural-language request."""
+
+    start_date: str | None = None
+    end_date: str | None = None
+    display_value: str = ""
+    granularity: str = "unknown"
+
+
+class FinanceIntentResponse(BaseModel):
+    """Structured interpretation of a finance request."""
+
+    original_request: str = ""
+    selected_flow: str = "unknown"
+    comparison: str = "none"
+    period: ParsedPeriodResponse = Field(
+        default_factory=ParsedPeriodResponse
+    )
+    category: str | None = None
+    scenario_name: str | None = None
+    requested_kpis: list[str] = Field(
+        default_factory=list
+    )
+    missing_fields: list[str] = Field(
+        default_factory=list
+    )
+    clarification_question: str | None = None
+    is_complete: bool = False
+    filters: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
 
 class AskResponse(BaseModel):
     """
