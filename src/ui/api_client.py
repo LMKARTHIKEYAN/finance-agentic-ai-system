@@ -238,8 +238,12 @@ def _parse_ask_response(
     """
     Parse and validate a successful ``POST /ask`` response.
 
-    The dashboard field remains optional for backward compatibility with
-    older API responses.
+    The following fields remain optional for backward compatibility:
+
+    - selected_flow
+    - dashboard
+    - clarification_required
+    - intent
     """
 
     try:
@@ -348,13 +352,186 @@ def _parse_ask_response(
             dashboard
         )
 
+    clarification_required = parsed_response.get(
+        "clarification_required",
+        False,
+    )
+
+    if not isinstance(
+        clarification_required,
+        bool,
+    ):
+        raise FinanceApiResponseError(
+            "Finance API response field "
+            "'clarification_required' must be a boolean."
+        )
+
+    intent = parsed_response.get(
+        "intent",
+        {},
+    )
+
+    if not isinstance(
+        intent,
+        dict,
+    ):
+        raise FinanceApiResponseError(
+            "Finance API response field "
+            "'intent' must be an object."
+        )
+
+    _validate_intent_response(
+        intent
+    )
+
+    parsed_response.setdefault(
+        "selected_flow",
+        None,
+    )
+
     parsed_response.setdefault(
         "dashboard",
         None,
     )
 
+    parsed_response.setdefault(
+        "clarification_required",
+        False,
+    )
+
+    parsed_response.setdefault(
+        "intent",
+        {},
+    )
+
     return parsed_response
 
+
+def _validate_intent_response(
+    intent: dict[str, Any],
+) -> None:
+    """
+    Validate the structured finance intent returned by FastAPI.
+
+    The client performs lightweight structural validation only. Detailed
+    validation remains the responsibility of the API Pydantic schemas.
+    """
+
+    string_fields = (
+        "original_request",
+        "selected_flow",
+        "comparison",
+    )
+
+    for field_name in string_fields:
+        field_value = intent.get(
+            field_name
+        )
+
+        if (
+            field_value is not None
+            and not isinstance(
+                field_value,
+                str,
+            )
+        ):
+            raise FinanceApiResponseError(
+                "Finance API intent field "
+                f"'{field_name}' must be a string."
+            )
+
+    nullable_string_fields = (
+        "category",
+        "scenario_name",
+        "clarification_question",
+    )
+
+    for field_name in nullable_string_fields:
+        field_value = intent.get(
+            field_name
+        )
+
+        if (
+            field_value is not None
+            and not isinstance(
+                field_value,
+                str,
+            )
+        ):
+            raise FinanceApiResponseError(
+                "Finance API intent field "
+                f"'{field_name}' must be a string or null."
+            )
+
+    list_fields = (
+        "requested_kpis",
+        "missing_fields",
+    )
+
+    for field_name in list_fields:
+        field_value = intent.get(
+            field_name
+        )
+
+        if (
+            field_value is not None
+            and not isinstance(
+                field_value,
+                list,
+            )
+        ):
+            raise FinanceApiResponseError(
+                "Finance API intent field "
+                f"'{field_name}' must be a list."
+            )
+
+    period = intent.get(
+        "period"
+    )
+
+    if (
+        period is not None
+        and not isinstance(
+            period,
+            dict,
+        )
+    ):
+        raise FinanceApiResponseError(
+            "Finance API intent field "
+            "'period' must be an object."
+        )
+
+    filters = intent.get(
+        "filters"
+    )
+
+    if (
+        filters is not None
+        and not isinstance(
+            filters,
+            dict,
+        )
+    ):
+        raise FinanceApiResponseError(
+            "Finance API intent field "
+            "'filters' must be an object."
+        )
+
+    is_complete = intent.get(
+        "is_complete"
+    )
+
+    if (
+        is_complete is not None
+        and not isinstance(
+            is_complete,
+            bool,
+        )
+    ):
+        raise FinanceApiResponseError(
+            "Finance API intent field "
+            "'is_complete' must be a boolean."
+        )
 
 def _validate_dashboard_response(
     dashboard: Any,
