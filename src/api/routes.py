@@ -156,10 +156,13 @@ def ask_finance_question(
     )
 
     return AskResponse(
-        answer=result.answer,
-        sources=sources,
-        selected_flow=result.selected_flow,
-        execution_status=result.execution_status,
-        used_fallback=result.used_fallback,
-        dashboard=dashboard,
+    answer=result.answer,
+    sources=result.sources,
+    selected_flow=result.selected_flow,
+    execution_status=result.execution_status,
+    used_fallback=result.used_fallback,
+    dashboard=result.dashboard,
+    clarification_required=result.clarification_required,
+    intent=result.intent,
+ 
     )
