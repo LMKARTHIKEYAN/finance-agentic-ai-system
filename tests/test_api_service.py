@@ -186,7 +186,7 @@ def test_service_returns_structured_result(
     )
 
     result = service.ask(
-        "What is the revenue variance?",
+        "Show actual vs budget revenue variance for January 2026",
         top_k=5,
     )
 
@@ -297,7 +297,7 @@ def test_service_raises_when_graph_fails(
         match="Finance graph execution failed",
     ):
         service.ask(
-            "What is the revenue variance?"
+            "Show actual vs budget revenue variance for January 2026"
         )
 
 
@@ -326,7 +326,7 @@ def test_service_raises_for_missing_csv(
         match="Required data file not found",
     ):
         service.ask(
-            "What is the revenue variance?"
+            "Show actual vs budget revenue variance for January 2026"
         )
 
 
