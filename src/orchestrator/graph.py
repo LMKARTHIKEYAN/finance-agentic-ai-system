@@ -32,6 +32,7 @@ from src.orchestrator.nodes import (
     forecast_node,
     kpi_node,
     operations_analysis_node,
+    pnl_node,
     profile_budget_node,
     profile_operations_node,
     recommendation_node,
@@ -54,6 +55,7 @@ SUPPORTED_FLOWS = (
     "forecast",
     "variance",
     "scenario",
+    "pnl",
     "full",
 )
 
@@ -71,6 +73,7 @@ def select_initial_route(
     "forecast",
     "variance",
     "scenario",
+    "pnl",
     "full",
     "error",
 ]:
@@ -287,6 +290,15 @@ def build_finance_graph() -> Any:
         -> Scenario
         -> KPI
         -> Commentary
+        -> Complete
+
+    P&L:
+        Router
+        -> Validate Operations
+        -> Validate Budget
+        -> Clean Operations
+        -> Clean Budget
+        -> P&L
         -> Complete
 
     Full:
@@ -550,6 +562,41 @@ def build_finance_graph() -> Any:
     )
 
     # ------------------------------------------------------------------
+    # P&L route
+    # ------------------------------------------------------------------
+
+    pnl_entry = _add_linear_route(
+        builder,
+        "pnl",
+        [
+            (
+                "validate_operations",
+                validate_operations_node,
+            ),
+            (
+                "validate_budget",
+                validate_budget_node,
+            ),
+            (
+                "clean_operations",
+                clean_operations_node,
+            ),
+            (
+                "clean_budget",
+                clean_budget_node,
+            ),
+            (
+                "pnl",
+                pnl_node,
+            ),
+            (
+                "complete",
+                complete_node,
+            ),
+        ],
+    )
+
+    # ------------------------------------------------------------------
     # Full management-analysis route
     # ------------------------------------------------------------------
 
@@ -651,6 +698,7 @@ def build_finance_graph() -> Any:
             "forecast": forecast_entry,
             "variance": variance_entry,
             "scenario": scenario_entry,
+            "pnl": pnl_entry,
             "full": full_entry,
             "error": "error",
         },

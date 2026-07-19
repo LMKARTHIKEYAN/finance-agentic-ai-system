@@ -165,6 +165,10 @@ def stub_all_graph_nodes(
             "commentary",
             "commentary_result",
         ),
+        "pnl_node": make_success_node(
+            "pnl",
+            "pnl_result",
+        ),
         "report_node": make_success_node(
             "report",
             "report_result",
@@ -231,6 +235,7 @@ def test_graph_contains_required_control_nodes() -> None:
         "variance__variance",
         "scenario__scenario",
         "full__report",
+        "pnl__pnl",
     ],
 )
 def test_graph_contains_route_specific_nodes(
@@ -483,6 +488,73 @@ def test_full_route(
     assert "commentary_result" in result
     assert "report_result" in result
 
+
+
+def test_pnl_route(
+    monkeypatch: pytest.MonkeyPatch,
+    base_state: FinanceGraphState,
+) -> None:
+    """A P&L request should execute only the dedicated P&L workflow."""
+
+    graph = build_stubbed_graph(monkeypatch)
+
+    initial_state: FinanceGraphState = {
+        **base_state,
+        "user_request": "Generate profit and loss statement",
+        "operations_data": pd.DataFrame({"value":[1]}),
+        "budget_data": pd.DataFrame({"value":[1]}),
+        "corporate_expenses_data": pd.DataFrame({"value":[1]}),
+        "budget_corporate_expenses_data": pd.DataFrame({"value":[1]}),
+    }
+
+    result = graph.invoke(initial_state)
+
+    assert result["selected_flow"]=="pnl"
+    assert result["execution_status"]=="completed"
+    assert result["executed_nodes"]==[
+        "validate_operations",
+        "validate_budget",
+        "clean_operations",
+        "clean_budget",
+        "pnl",
+        "complete",
+    ]
+    assert "pnl_result" in result
+    assert "report_result" not in result
+    assert "forecast_result" not in result
+
+
+def test_pnl_route_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    base_state: FinanceGraphState,
+)->None:
+    """P&L workflow should stop if pnl node fails."""
+
+    stub_all_graph_nodes(monkeypatch)
+    monkeypatch.setattr(
+        graph_module,
+        "pnl_node",
+        make_failure_node("pnl","P&L calculation failed."),
+    )
+    graph=graph_module.build_finance_graph()
+    initial_state={
+        **base_state,
+        "user_request":"Generate profit and loss statement",
+        "operations_data":pd.DataFrame({"value":[1]}),
+        "budget_data":pd.DataFrame({"value":[1]}),
+        "corporate_expenses_data":pd.DataFrame({"value":[1]}),
+        "budget_corporate_expenses_data":pd.DataFrame({"value":[1]}),
+    }
+    result=graph.invoke(initial_state)
+    assert result["selected_flow"]=="pnl"
+    assert result["execution_status"]=="failed"
+    assert result["failed_node"]=="pnl"
+    assert result["executed_nodes"]==[
+        "validate_operations",
+        "validate_budget",
+        "clean_operations",
+        "clean_budget",
+    ]
 
 # ----------------------------------------------------------------------
 # Error-route tests

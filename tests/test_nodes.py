@@ -451,6 +451,346 @@ def test_variance_node_success(
     assert "variance" in result["executed_nodes"]
 
 
+def test_pnl_node_success(
+    monkeypatch: pytest.MonkeyPatch,
+    valid_operations_data: pd.DataFrame,
+    valid_budget_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """The P&L node should store all structured P&L outputs."""
+
+    corporate_expenses_data = pd.DataFrame(
+        {
+            "month": ["2026-01", "2026-02"],
+            "expense_category": ["Salary", "Rent"],
+            "actual_amount": [50000.0, 20000.0],
+        }
+    )
+    budget_corporate_expenses_data = pd.DataFrame(
+        {
+            "month": ["2026-01", "2026-02"],
+            "expense_category": ["Salary", "Rent"],
+            "budget_amount": [48000.0, 22000.0],
+        }
+    )
+
+    actual_pnl = {
+        "revenue": 550.0,
+        "gross_profit": 135.0,
+        "operating_profit": 65000.0,
+    }
+    budget_pnl = {
+        "revenue": 480000.0,
+        "gross_profit": 120000.0,
+        "operating_profit": 50000.0,
+    }
+    variance_pnl = {
+        "revenue_variance": -479450.0,
+        "gross_profit_variance": -119865.0,
+        "operating_profit_variance": 15000.0,
+    }
+    pnl_summary = {
+        "actual_revenue": 550.0,
+        "budget_revenue": 480000.0,
+        "revenue_variance": -479450.0,
+    }
+
+    expected_result = SimpleNamespace(
+        actual_pnl=actual_pnl,
+        budget_pnl=budget_pnl,
+        variance_pnl=variance_pnl,
+        pnl_summary=pnl_summary,
+        available_months=["2026-01", "2026-02"],
+        excluded_actual_months=[],
+        excluded_budget_months=[],
+    )
+
+    def fake_analyze(
+        self: Any,
+        operations_data: pd.DataFrame,
+        budget_data: pd.DataFrame,
+        corporate_expenses_data: pd.DataFrame,
+        budget_corporate_expenses_data: pd.DataFrame,
+        start_month: str | None = None,
+        end_month: str | None = None,
+    ) -> Any:
+        assert operations_data.equals(valid_operations_data)
+        assert budget_data.equals(valid_budget_data)
+        assert corporate_expenses_data.equals(
+            state["corporate_expenses_data"]
+        )
+        assert budget_corporate_expenses_data.equals(
+            state["budget_corporate_expenses_data"]
+        )
+        assert start_month == "2026-01"
+        assert end_month == "2026-02"
+        return expected_result
+
+    monkeypatch.setattr(
+        nodes.PnlAgent,
+        "analyze",
+        fake_analyze,
+    )
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_operations_data": valid_operations_data,
+        "cleaned_budget_data": valid_budget_data,
+        "corporate_expenses_data": corporate_expenses_data,
+        "budget_corporate_expenses_data": (
+            budget_corporate_expenses_data
+        ),
+        "start_month": "2026-01",
+        "end_month": "2026-02",
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "running"
+    assert result["pnl_result"] is expected_result
+    assert result["actual_pnl"] == actual_pnl
+    assert result["budget_pnl"] == budget_pnl
+    assert result["variance_pnl"] == variance_pnl
+    assert result["pnl_summary"] == pnl_summary
+    assert result["pnl_available_months"] == [
+        "2026-01",
+        "2026-02",
+    ]
+    assert result["pnl_excluded_actual_months"] == []
+    assert result["pnl_excluded_budget_months"] == []
+    assert result["error_message"] == ""
+    assert result["failed_node"] == ""
+    assert "pnl" in result["executed_nodes"]
+
+
+def test_pnl_node_requires_cleaned_operations_data(
+    valid_budget_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """P&L execution should fail without cleaned operations data."""
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_budget_data": valid_budget_data,
+        "corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "actual_amount": [50000.0],
+            }
+        ),
+        "budget_corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "budget_amount": [48000.0],
+            }
+        ),
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "failed"
+    assert result["failed_node"] == "pnl"
+    assert "cleaned_operations_data" in result["error_message"]
+    assert result["errors"]
+
+
+def test_pnl_node_requires_cleaned_budget_data(
+    valid_operations_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """P&L execution should fail without cleaned budget data."""
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_operations_data": valid_operations_data,
+        "corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "actual_amount": [50000.0],
+            }
+        ),
+        "budget_corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "budget_amount": [48000.0],
+            }
+        ),
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "failed"
+    assert result["failed_node"] == "pnl"
+    assert "cleaned_budget_data" in result["error_message"]
+
+
+def test_pnl_node_requires_corporate_expenses_data(
+    valid_operations_data: pd.DataFrame,
+    valid_budget_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """P&L execution should fail without actual corporate expenses."""
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_operations_data": valid_operations_data,
+        "cleaned_budget_data": valid_budget_data,
+        "budget_corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "budget_amount": [48000.0],
+            }
+        ),
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "failed"
+    assert result["failed_node"] == "pnl"
+    assert "corporate_expenses_data" in result["error_message"]
+
+
+def test_pnl_node_requires_budget_corporate_expenses_data(
+    valid_operations_data: pd.DataFrame,
+    valid_budget_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """P&L execution should fail without budget corporate expenses."""
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_operations_data": valid_operations_data,
+        "cleaned_budget_data": valid_budget_data,
+        "corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "actual_amount": [50000.0],
+            }
+        ),
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "failed"
+    assert result["failed_node"] == "pnl"
+    assert (
+        "budget_corporate_expenses_data"
+        in result["error_message"]
+    )
+
+
+def test_pnl_node_rejects_missing_result_output(
+    monkeypatch: pytest.MonkeyPatch,
+    valid_operations_data: pd.DataFrame,
+    valid_budget_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """P&L node should reject an incomplete P&L agent result."""
+
+    monkeypatch.setattr(
+        nodes.PnlAgent,
+        "analyze",
+        lambda self, **kwargs: SimpleNamespace(
+            actual_pnl={},
+            budget_pnl={},
+            variance_pnl=None,
+            pnl_summary={},
+            available_months=[],
+            excluded_actual_months=[],
+            excluded_budget_months=[],
+        ),
+    )
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_operations_data": valid_operations_data,
+        "cleaned_budget_data": valid_budget_data,
+        "corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "actual_amount": [50000.0],
+            }
+        ),
+        "budget_corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "budget_amount": [48000.0],
+            }
+        ),
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "failed"
+    assert result["failed_node"] == "pnl"
+    assert "variance_pnl" in result["error_message"]
+
+
+def test_pnl_node_records_agent_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    valid_operations_data: pd.DataFrame,
+    valid_budget_data: pd.DataFrame,
+    base_state: FinanceGraphState,
+) -> None:
+    """Unexpected P&L agent exceptions should be recorded in state."""
+
+    def raise_error(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("Unexpected P&L agent failure")
+
+    monkeypatch.setattr(
+        nodes.PnlAgent,
+        "analyze",
+        raise_error,
+    )
+
+    state: FinanceGraphState = {
+        **base_state,
+        "selected_flow": "pnl",
+        "cleaned_operations_data": valid_operations_data,
+        "cleaned_budget_data": valid_budget_data,
+        "corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "actual_amount": [50000.0],
+            }
+        ),
+        "budget_corporate_expenses_data": pd.DataFrame(
+            {
+                "month": ["2026-01"],
+                "expense_category": ["Salary"],
+                "budget_amount": [48000.0],
+            }
+        ),
+    }
+
+    result = nodes.pnl_node(state)
+
+    assert result["execution_status"] == "failed"
+    assert result["failed_node"] == "pnl"
+    assert result["error_message"] == "Unexpected P&L agent failure"
+    assert any(
+        "pnl: Unexpected P&L agent failure" in error
+        for error in result["errors"]
+    )
+
+
+
+
 def test_recommendation_node_success(
     monkeypatch: pytest.MonkeyPatch,
     base_state: FinanceGraphState,

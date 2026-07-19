@@ -65,6 +65,8 @@ class ReportAgent:
         recommendation_result
         finance_rules_result
         scenario_result
+        pnl_result
+        pnl_commentary_result
     """
 
     VALID_REPORT_TYPES = {
@@ -119,6 +121,8 @@ class ReportAgent:
         scenario_result: Any | None = None,
         report_title: str = "Finance Agentic AI Management Report",
         report_type: str = "management",
+        pnl_result: Any | None = None,
+        pnl_commentary_result: Any | None = None,
     ) -> ReportResult:
         """Assemble supplied agent outputs into a complete report."""
 
@@ -140,6 +144,8 @@ class ReportAgent:
             "commentary": commentary_result is not None,
             "finance_rules": finance_rules_result is not None,
             "scenario": scenario_result is not None,
+            "pnl": pnl_result is not None,
+            "pnl_commentary": pnl_commentary_result is not None,
         }
 
         sections: list[ReportSection] = []
@@ -148,7 +154,29 @@ class ReportAgent:
             self._build_executive_section(commentary_result)
         )
 
+        pnl_executive_section = self._build_pnl_executive_section(
+            pnl_commentary_result
+        )
+        if pnl_executive_section is not None:
+            sections.append(pnl_executive_section)
+
         optional_sections = [
+            self._build_pnl_revenue_section(
+                pnl_result,
+                pnl_commentary_result,
+            ),
+            self._build_pnl_profitability_section(
+                pnl_result,
+                pnl_commentary_result,
+            ),
+            self._build_pnl_cost_section(
+                pnl_result,
+                pnl_commentary_result,
+            ),
+            self._build_pnl_margin_section(
+                pnl_result,
+                pnl_commentary_result,
+            ),
             self._build_kpi_section(kpi_result, commentary_result),
             self._build_operations_section(operations_result),
             self._build_budget_section(budget_result),
@@ -177,12 +205,14 @@ class ReportAgent:
             anomaly_result=anomaly_result,
             root_cause_result=root_cause_result,
             finance_rules_result=finance_rules_result,
+            pnl_commentary_result=pnl_commentary_result,
         )
 
         management_actions = self._collect_management_actions(
             commentary_result=commentary_result,
             recommendation_result=recommendation_result,
             root_cause_result=root_cause_result,
+            pnl_commentary_result=pnl_commentary_result,
         )
 
         overall_status = self._determine_overall_status(
@@ -202,8 +232,9 @@ class ReportAgent:
             overall_status=overall_status,
             section_count=len(sections),
             sections=sections,
-            executive_summary=str(
-                getattr(commentary_result, "executive_summary", "")
+            executive_summary=self._combine_executive_summaries(
+                commentary_result=commentary_result,
+                pnl_commentary_result=pnl_commentary_result,
             ),
             key_risks=key_risks,
             management_actions=management_actions,
@@ -263,6 +294,390 @@ class ReportAgent:
             status="AVAILABLE",
             summary=summary or "Executive summary is unavailable.",
             items=items,
+        )
+
+    def _build_pnl_executive_section(
+        self,
+        pnl_commentary_result: Any | None,
+    ) -> ReportSection | None:
+        if pnl_commentary_result is None:
+            return None
+
+        summary = str(
+            getattr(
+                pnl_commentary_result,
+                "executive_summary",
+                "",
+            )
+        ).strip()
+
+        positive_drivers = self._string_list(
+            getattr(
+                pnl_commentary_result,
+                "positive_drivers",
+                [],
+            )
+        )
+
+        risks = self._string_list(
+            getattr(
+                pnl_commentary_result,
+                "risks",
+                [],
+            )
+        )
+
+        status = "REVIEW" if risks else "NORMAL"
+
+        items = [
+            f"Positive driver: {item}"
+            for item in positive_drivers[
+                : self.max_items_per_section
+            ]
+        ]
+
+        return ReportSection(
+            section_code="PNL_EXECUTIVE_SUMMARY",
+            title="P&L Executive Summary",
+            status=status,
+            summary=summary or "P&L executive summary is unavailable.",
+            items=items,
+        )
+
+    def _build_pnl_revenue_section(
+        self,
+        pnl_result: Any | None,
+        pnl_commentary_result: Any | None,
+    ) -> ReportSection | None:
+        comments = self._string_list(
+            getattr(
+                pnl_commentary_result,
+                "revenue_commentary",
+                [],
+            )
+        )
+
+        summary = self._extract_pnl_summary(
+            pnl_result=pnl_result,
+            pnl_commentary_result=pnl_commentary_result,
+        )
+
+        if summary is None and not comments:
+            return None
+
+        rows = self._build_pnl_metric_rows(
+            summary=summary,
+            metrics=(("revenue", "Revenue"),),
+        )
+
+        revenue_variance = self._pnl_variance_value(
+            summary,
+            "revenue_variance",
+        )
+
+        status = (
+            "REVIEW"
+            if revenue_variance is not None and revenue_variance < 0
+            else "NORMAL"
+        )
+
+        return ReportSection(
+            section_code="PNL_REVENUE_SUMMARY",
+            title="P&L Revenue Summary",
+            status=status,
+            summary="Actual revenue performance compared with budget.",
+            items=comments[: self.max_items_per_section],
+            data=self._limit_rows(rows),
+        )
+
+    def _build_pnl_profitability_section(
+        self,
+        pnl_result: Any | None,
+        pnl_commentary_result: Any | None,
+    ) -> ReportSection | None:
+        comments = self._string_list(
+            getattr(
+                pnl_commentary_result,
+                "profitability_commentary",
+                [],
+            )
+        )
+
+        summary = self._extract_pnl_summary(
+            pnl_result=pnl_result,
+            pnl_commentary_result=pnl_commentary_result,
+        )
+
+        if summary is None and not comments:
+            return None
+
+        metrics = (
+            ("gross_profit", "Gross Profit"),
+            ("ebitda", "EBITDA"),
+            ("ebit", "EBIT"),
+            ("ebt", "EBT"),
+        )
+
+        rows = self._build_pnl_metric_rows(
+            summary=summary,
+            metrics=metrics,
+        )
+
+        status = "NORMAL"
+        for metric, _ in metrics:
+            value = self._pnl_variance_value(
+                summary,
+                f"{metric}_variance",
+            )
+            if value is not None and value < 0:
+                status = "REVIEW"
+                break
+
+        return ReportSection(
+            section_code="PNL_PROFITABILITY_SUMMARY",
+            title="P&L Profitability Summary",
+            status=status,
+            summary=(
+                "Gross profit, EBITDA, EBIT, and EBT performance "
+                "compared with budget."
+            ),
+            items=comments[: self.max_items_per_section],
+            data=self._limit_rows(rows),
+        )
+
+    def _build_pnl_cost_section(
+        self,
+        pnl_result: Any | None,
+        pnl_commentary_result: Any | None,
+    ) -> ReportSection | None:
+        comments = self._string_list(
+            getattr(
+                pnl_commentary_result,
+                "cost_commentary",
+                [],
+            )
+        )
+
+        summary = self._extract_pnl_summary(
+            pnl_result=pnl_result,
+            pnl_commentary_result=pnl_commentary_result,
+        )
+
+        if summary is None and not comments:
+            return None
+
+        metrics = (
+            ("direct_cost", "Direct Cost"),
+            ("sales_marketing", "Sales and Marketing"),
+            ("other_opex", "Other OPEX"),
+            ("depreciation", "Depreciation"),
+            ("interest", "Interest"),
+        )
+
+        rows = self._build_pnl_metric_rows(
+            summary=summary,
+            metrics=metrics,
+        )
+
+        status = "NORMAL"
+        for metric, _ in metrics:
+            value = self._pnl_variance_value(
+                summary,
+                f"{metric}_variance",
+            )
+            if value is not None and value > 0:
+                status = "REVIEW"
+                break
+
+        return ReportSection(
+            section_code="PNL_COST_SUMMARY",
+            title="P&L Cost Summary",
+            status=status,
+            summary=(
+                "Direct costs and operating expenses compared with budget."
+            ),
+            items=comments[: self.max_items_per_section],
+            data=self._limit_rows(rows),
+        )
+
+    def _build_pnl_margin_section(
+        self,
+        pnl_result: Any | None,
+        pnl_commentary_result: Any | None,
+    ) -> ReportSection | None:
+        comments = self._string_list(
+            getattr(
+                pnl_commentary_result,
+                "margin_commentary",
+                [],
+            )
+        )
+
+        summary = self._extract_pnl_summary(
+            pnl_result=pnl_result,
+            pnl_commentary_result=pnl_commentary_result,
+        )
+
+        if summary is None and not comments:
+            return None
+
+        rows = self._build_pnl_metric_rows(
+            summary=summary,
+            metrics=(
+                (
+                    "gross_margin_percentage",
+                    "Gross Margin Percentage",
+                ),
+            ),
+            variance_field_overrides={
+                "gross_margin_percentage": (
+                    "gross_margin_percentage_point_variance"
+                )
+            },
+        )
+
+        margin_variance = self._pnl_variance_value(
+            summary,
+            "gross_margin_percentage_point_variance",
+        )
+
+        status = (
+            "REVIEW"
+            if margin_variance is not None and margin_variance < 0
+            else "NORMAL"
+        )
+
+        return ReportSection(
+            section_code="PNL_MARGIN_SUMMARY",
+            title="P&L Margin Summary",
+            status=status,
+            summary=(
+                "Gross-margin performance and percentage-point movement "
+                "compared with budget."
+            ),
+            items=comments[: self.max_items_per_section],
+            data=self._limit_rows(rows),
+        )
+
+    def _extract_pnl_summary(
+        self,
+        pnl_result: Any | None,
+        pnl_commentary_result: Any | None,
+    ) -> dict[str, Any] | None:
+        summary = getattr(
+            pnl_commentary_result,
+            "source_summary",
+            None,
+        )
+
+        if not isinstance(summary, dict) and pnl_result is not None:
+            summary = getattr(pnl_result, "summary", None)
+
+        if not isinstance(summary, dict):
+            return None
+
+        actual = summary.get("actual")
+        budget = summary.get("budget")
+        variance = summary.get("variance")
+
+        if not all(
+            isinstance(section, dict)
+            for section in (actual, budget, variance)
+        ):
+            return None
+
+        return {
+            "actual": dict(actual),
+            "budget": dict(budget),
+            "variance": dict(variance),
+        }
+
+    def _build_pnl_metric_rows(
+        self,
+        summary: dict[str, Any] | None,
+        metrics: tuple[tuple[str, str], ...],
+        variance_field_overrides: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        if summary is None:
+            return []
+
+        actual = summary["actual"]
+        budget = summary["budget"]
+        variance = summary["variance"]
+        overrides = variance_field_overrides or {}
+
+        rows: list[dict[str, Any]] = []
+
+        for metric, display_name in metrics:
+            variance_field = overrides.get(
+                metric,
+                f"{metric}_variance",
+            )
+
+            percentage_field = f"{metric}_variance_percentage"
+
+            rows.append(
+                {
+                    "metric": metric,
+                    "display_name": display_name,
+                    "actual": actual.get(metric),
+                    "budget": budget.get(metric),
+                    "variance": variance.get(variance_field),
+                    "variance_percentage": variance.get(
+                        percentage_field
+                    ),
+                    "variance_unit": (
+                        "percentage_points"
+                        if variance_field
+                        == "gross_margin_percentage_point_variance"
+                        else "currency"
+                    ),
+                }
+            )
+
+        return rows
+
+    def _pnl_variance_value(
+        self,
+        summary: dict[str, Any] | None,
+        field_name: str,
+    ) -> float | None:
+        if summary is None:
+            return None
+
+        variance = summary.get("variance", {})
+        return self._number(variance.get(field_name))
+
+    def _combine_executive_summaries(
+        self,
+        commentary_result: Any,
+        pnl_commentary_result: Any | None,
+    ) -> str:
+        summaries = [
+            str(
+                getattr(
+                    commentary_result,
+                    "executive_summary",
+                    "",
+                )
+            ).strip()
+        ]
+
+        if pnl_commentary_result is not None:
+            summaries.append(
+                str(
+                    getattr(
+                        pnl_commentary_result,
+                        "executive_summary",
+                        "",
+                    )
+                ).strip()
+            )
+
+        return " ".join(
+            summary
+            for summary in summaries
+            if summary
         )
 
     def _build_kpi_section(
@@ -848,10 +1263,22 @@ class ReportAgent:
         anomaly_result: Any | None,
         root_cause_result: Any | None,
         finance_rules_result: Any | None,
+        pnl_commentary_result: Any | None,
     ) -> list[str]:
         risks = self._string_list(
             getattr(commentary_result, "risks", [])
         )
+
+        if pnl_commentary_result is not None:
+            risks.extend(
+                self._string_list(
+                    getattr(
+                        pnl_commentary_result,
+                        "risks",
+                        [],
+                    )
+                )
+            )
 
         if anomaly_result is not None:
             for finding in getattr(anomaly_result, "findings", []):
@@ -903,10 +1330,22 @@ class ReportAgent:
         commentary_result: Any,
         recommendation_result: Any | None,
         root_cause_result: Any | None,
+        pnl_commentary_result: Any | None,
     ) -> list[str]:
         actions = self._string_list(
             getattr(commentary_result, "management_attention", [])
         )
+
+        if pnl_commentary_result is not None:
+            actions.extend(
+                self._string_list(
+                    getattr(
+                        pnl_commentary_result,
+                        "management_attention",
+                        [],
+                    )
+                )
+            )
 
         if recommendation_result is not None:
             for item in getattr(

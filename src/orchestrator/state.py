@@ -21,6 +21,7 @@ FlowType = Literal[
     "forecast",
     "variance",
     "scenario",
+    "pnl",
     "full",
     "unknown",
 ]
@@ -40,7 +41,7 @@ class FinanceGraphState(TypedDict, total=False):
 
     The state is defined with ``total=False`` because different graph routes
     require different fields. For example, the KPI route does not necessarily
-    require scenario or forecast results.
+    require scenario, forecast, or P&L inputs.
 
     Every orchestration node should:
 
@@ -65,7 +66,11 @@ class FinanceGraphState(TypedDict, total=False):
     operations_data: pd.DataFrame
     budget_data: pd.DataFrame
 
-    # Optional data inputs retained for future workflows.
+    # Corporate-expense inputs required by the P&L workflow.
+    corporate_expenses_data: pd.DataFrame
+    budget_corporate_expenses_data: pd.DataFrame
+
+    # Optional inputs retained for additional workflows.
     forecast_data: pd.DataFrame
     scenario_data: pd.DataFrame
 
@@ -110,8 +115,11 @@ class FinanceGraphState(TypedDict, total=False):
     operations_validation: Any
     budget_validation: Any
 
+    corporate_expenses_validation: Any
+    budget_corporate_expenses_validation: Any
+
     # Backward-compatible general field.
-    # This can be used by a smaller route that has only one validation result.
+    # This can be used by smaller routes that have one validation result.
     validation_result: Any
 
     # ------------------------------------------------------------------
@@ -120,6 +128,9 @@ class FinanceGraphState(TypedDict, total=False):
 
     cleaned_operations_data: pd.DataFrame
     cleaned_budget_data: pd.DataFrame
+
+    cleaned_corporate_expenses_data: pd.DataFrame
+    cleaned_budget_corporate_expenses_data: pd.DataFrame
 
     # Backward-compatible general field.
     cleaned_data: pd.DataFrame
@@ -130,6 +141,9 @@ class FinanceGraphState(TypedDict, total=False):
 
     operations_profile: Any
     budget_profile: Any
+
+    corporate_expenses_profile: Any
+    budget_corporate_expenses_profile: Any
 
     # Backward-compatible general field.
     profile_result: Any
@@ -143,6 +157,10 @@ class FinanceGraphState(TypedDict, total=False):
     forecast_result: Any
     scenario_result: Any
     variance_result: Any
+
+    # Complete Actual vs Budget P&L result returned by PnlAgent.analyze().
+    pnl_result: Any
+
     finance_rules_result: Any
     anomaly_result: Any
     root_cause_result: Any
@@ -150,6 +168,22 @@ class FinanceGraphState(TypedDict, total=False):
     kpi_result: Any
     commentary_result: Any
     report_result: Any
+
+    # ------------------------------------------------------------------
+    # Optional extracted P&L outputs
+    # ------------------------------------------------------------------
+
+    actual_pnl: list[dict[str, Any]]
+    budget_pnl: list[dict[str, Any]]
+    variance_pnl: list[dict[str, Any]]
+    pnl_summary: dict[str, Any]
+    pnl_available_months: list[str]
+
+    # Actual months for which matching Budget P&L was unavailable.
+    pnl_excluded_actual_months: list[str]
+
+    # Budget months for which matching Actual P&L was unavailable.
+    pnl_excluded_budget_months: list[str]
 
     # ------------------------------------------------------------------
     # Error handling

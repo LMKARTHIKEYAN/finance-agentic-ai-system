@@ -30,6 +30,7 @@ from src.agents.finance.budget_agent import BudgetAgent
 from src.agents.finance.finance_rules_agent import FinanceRulesAgent
 from src.agents.finance.forecast_agent import ForecastAgent
 from src.agents.finance.kpi_agent import KPIAgent
+from src.agents.finance.pnl_agent import PnlAgent
 from src.agents.finance.scenario_agent import ScenarioAgent
 from src.agents.finance.variance_agent import RevenueVarianceAgent
 from src.agents.reporting.commentary_agent import CommentaryAgent
@@ -667,6 +668,125 @@ def variance_node(
 
     except Exception as error:
         return _record_failure(state, node_name, error)
+
+
+
+def pnl_node(
+    state: FinanceGraphState,
+) -> FinanceGraphState:
+    """
+    Run the existing PnlAgent.
+
+    The node uses cleaned operations and budget data produced by the existing
+    validation and cleaning nodes. Corporate-expense datasets are passed
+    directly to PnlAgent, which remains responsible for validating and
+    preparing those P&L-specific inputs.
+
+    The complete agent result is stored in ``pnl_result``. Its structured
+    outputs are also copied into dedicated state fields so FastAPI, Streamlit,
+    RAG, and chatbot response-building layers can access them directly.
+    """
+
+    node_name = "pnl"
+
+    try:
+        cleaned_operations_data = _require_dataframe(
+            state,
+            "cleaned_operations_data",
+            node_name,
+        )
+        cleaned_budget_data = _require_dataframe(
+            state,
+            "cleaned_budget_data",
+            node_name,
+        )
+        corporate_expenses_data = _require_dataframe(
+            state,
+            "corporate_expenses_data",
+            node_name,
+        )
+        budget_corporate_expenses_data = _require_dataframe(
+            state,
+            "budget_corporate_expenses_data",
+            node_name,
+        )
+
+        result = PnlAgent().analyze(
+            operations_data=cleaned_operations_data,
+            budget_data=cleaned_budget_data,
+            corporate_expenses_data=corporate_expenses_data,
+            budget_corporate_expenses_data=(
+                budget_corporate_expenses_data
+            ),
+            start_month=state.get("start_month"),
+            end_month=state.get("end_month"),
+        )
+
+        actual_pnl = getattr(result, "actual_pnl", None)
+        budget_pnl = getattr(result, "budget_pnl", None)
+        variance_pnl = getattr(result, "variance_pnl", None)
+
+        pnl_summary = getattr(
+            result,
+            "pnl_summary",
+            getattr(result, "summary", None),
+        )
+        available_months = getattr(
+            result,
+            "available_months",
+            [],
+        )
+        excluded_actual_months = getattr(
+            result,
+            "excluded_actual_months",
+            [],
+        )
+        excluded_budget_months = getattr(
+            result,
+            "excluded_budget_months",
+            [],
+        )
+
+        if actual_pnl is None:
+            raise ValueError(
+                "P&L Agent result does not contain 'actual_pnl'."
+            )
+
+        if budget_pnl is None:
+            raise ValueError(
+                "P&L Agent result does not contain 'budget_pnl'."
+            )
+
+        if variance_pnl is None:
+            raise ValueError(
+                "P&L Agent result does not contain 'variance_pnl'."
+            )
+
+        if pnl_summary is None:
+            raise ValueError(
+                "P&L Agent result does not contain a P&L summary."
+            )
+
+        return _record_success(
+            state,
+            node_name,
+            pnl_result=result,
+            actual_pnl=actual_pnl,
+            budget_pnl=budget_pnl,
+            variance_pnl=variance_pnl,
+            pnl_summary=pnl_summary,
+            pnl_available_months=list(available_months),
+            pnl_excluded_actual_months=list(
+                excluded_actual_months
+            ),
+            pnl_excluded_budget_months=list(
+                excluded_budget_months
+            ),
+        )
+
+    except Exception as error:
+        return _record_failure(state, node_name, error)
+
 
 
 def finance_rules_node(

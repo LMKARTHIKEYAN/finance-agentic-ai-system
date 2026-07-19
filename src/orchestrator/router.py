@@ -22,7 +22,7 @@ def identify_flow(user_request: str) -> FlowType:
     Returns:
         One of the supported workflow names:
         ``kpi``, ``budget``, ``forecast``, ``variance``, ``scenario``,
-        ``full``, or ``unknown``.
+        ``pnl``, ``full``, or ``unknown``.
     """
 
     normalized_request = user_request.strip().lower()
@@ -42,6 +42,27 @@ def identify_flow(user_request: str) -> FlowType:
         "complete report",
         "end to end analysis",
         "end-to-end analysis",
+    )
+
+    pnl_keywords = (
+        "pnl",
+        "p&l",
+        "p & l",
+        "profit and loss",
+        "profit & loss",
+        "profit loss statement",
+        "profit and loss statement",
+        "profit & loss statement",
+        "income statement",
+        "statement of profit and loss",
+        "statement of profit & loss",
+        "generate pnl",
+        "prepare pnl",
+        "create pnl",
+        "pnl analysis",
+        "p&l analysis",
+        "gross profit statement",
+        "operating profit statement",
     )
 
     variance_keywords = (
@@ -99,28 +120,54 @@ def identify_flow(user_request: str) -> FlowType:
     )
 
     # More specific and broader workflows must be checked first.
-    if any(keyword in normalized_request for keyword in full_keywords):
+    if any(
+        keyword in normalized_request
+        for keyword in full_keywords
+    ):
         return "full"
 
-    if any(keyword in normalized_request for keyword in variance_keywords):
+    if any(
+        keyword in normalized_request
+        for keyword in pnl_keywords
+    ):
+        return "pnl"
+
+    if any(
+        keyword in normalized_request
+        for keyword in variance_keywords
+    ):
         return "variance"
 
-    if any(keyword in normalized_request for keyword in scenario_keywords):
+    if any(
+        keyword in normalized_request
+        for keyword in scenario_keywords
+    ):
         return "scenario"
 
-    if any(keyword in normalized_request for keyword in forecast_keywords):
+    if any(
+        keyword in normalized_request
+        for keyword in forecast_keywords
+    ):
         return "forecast"
 
-    if any(keyword in normalized_request for keyword in budget_keywords):
+    if any(
+        keyword in normalized_request
+        for keyword in budget_keywords
+    ):
         return "budget"
 
-    if any(keyword in normalized_request for keyword in kpi_keywords):
+    if any(
+        keyword in normalized_request
+        for keyword in kpi_keywords
+    ):
         return "kpi"
 
     return "unknown"
 
 
-def route_request(state: FinanceGraphState) -> FinanceGraphState:
+def route_request(
+    state: FinanceGraphState,
+) -> FinanceGraphState:
     """
     Update the graph state with the selected workflow.
 
@@ -141,7 +188,9 @@ def route_request(state: FinanceGraphState) -> FinanceGraphState:
             **state,
             "selected_flow": "unknown",
             "execution_status": "failed",
-            "error_message": "Unable to identify a supported workflow.",
+            "error_message": (
+                "Unable to identify a supported workflow."
+            ),
             "errors": [
                 *state.get("errors", []),
                 "Unable to identify a supported workflow.",
@@ -153,5 +202,6 @@ def route_request(state: FinanceGraphState) -> FinanceGraphState:
         "selected_flow": selected_flow,
         "execution_status": "running",
         "error_message": "",
-        "errors": state.get("errors", []),
+        "failed_node": "",
+        "errors": list(state.get("errors", [])),
     }
