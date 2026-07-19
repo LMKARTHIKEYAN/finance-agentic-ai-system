@@ -37,7 +37,13 @@ from src.ui.api_client import (
 APP_TITLE = "Finance Agentic AI"
 
 APP_SUBTITLE = (
-    "Natural-language FP&A analysis, insights and management reporting"
+    "Natural-language FP&A analysis using the project's local sample data"
+)
+
+DATA_SOURCE_LABEL = "Local project data"
+DATA_SOURCE_DESCRIPTION = (
+    "The FastAPI backend automatically loads the existing local CSV, "
+    "Excel and assumptions files. No user upload is required."
 )
 
 DEFAULT_TOP_K = 5
@@ -198,6 +204,9 @@ def _render_sidebar() -> None:
     with st.sidebar:
         st.header("Finance AI Controls")
 
+        st.success(f"Data source: {DATA_SOURCE_LABEL}")
+        st.caption(DATA_SOURCE_DESCRIPTION)
+
         st.session_state.top_k = st.slider(
             "RAG sources",
             min_value=1,
@@ -240,7 +249,7 @@ def _render_sidebar() -> None:
         st.divider()
 
         if st.button(
-            "Clear conversation",
+            "Start new analysis session",
             use_container_width=True,
         ):
             _clear_conversation()
@@ -280,9 +289,10 @@ def _render_header() -> None:
 
     if not st.session_state.messages:
         st.info(
-            "Ask for KPI, budget, forecast, variance, scenario "
-            "or management commentary. Include a reporting period "
-            "when possible."
+            "Ask for KPI, budget, forecast, variance, scenario or "
+            "management commentary. The backend uses the existing "
+            "local project data automatically. Include a reporting "
+            "period when possible."
         )
 
     pending_request = st.session_state.get(
