@@ -5,7 +5,8 @@ Every LangGraph node reads information from this state and returns updates
 that are merged back into the same state.
 
 This module contains only state definitions. It must not contain finance
-calculations, routing logic, agent execution logic, or graph construction.
+calculations, routing logic, agent execution logic, memory persistence logic,
+or graph construction.
 """
 
 from __future__ import annotations
@@ -35,6 +36,16 @@ ExecutionStatus = Literal[
 ]
 
 
+MemoryStatus = Literal[
+    "not_started",
+    "session_created",
+    "context_loaded",
+    "saving",
+    "saved",
+    "failed",
+]
+
+
 class FinanceGraphState(TypedDict, total=False):
     """
     Shared state used by the Finance Agentic AI LangGraph workflow.
@@ -50,6 +61,15 @@ class FinanceGraphState(TypedDict, total=False):
     3. Return the result under the appropriate state field.
     4. Record failures in ``errors`` and ``error_message``.
     5. Set ``execution_status`` to ``failed`` when execution cannot continue.
+
+    Memory integration rules:
+
+    1. The service layer or graph entry node creates the memory session.
+    2. ``session_id`` and ``workflow_id`` are carried through the graph state.
+    3. Agent nodes may expose outputs through the normal result fields.
+    4. A dedicated memory node or service persists agent outputs and reports.
+    5. This state module stores only memory-related values; it does not perform
+       any persistence itself.
     """
 
     # ------------------------------------------------------------------
@@ -58,6 +78,45 @@ class FinanceGraphState(TypedDict, total=False):
 
     user_request: str
     selected_flow: FlowType
+
+    # Optional caller identifier used for persistent user preferences.
+    user_id: str | None
+
+    # ------------------------------------------------------------------
+    # Memory and workflow identity
+    # ------------------------------------------------------------------
+
+    # Temporary session identifier created by MemoryManager.
+    session_id: str
+
+    # Unique workflow identifier stored inside the memory session.
+    workflow_id: str
+
+    # Combined session and long-term context returned by MemoryManager.
+    # Kept as Any to avoid coupling the graph state to a concrete memory class.
+    memory_context: Any
+
+    # Current memory lifecycle status.
+    memory_status: MemoryStatus
+
+    # Persistent memory ID of the final management report.
+    report_memory_id: str | None
+
+    # Mapping of agent name to persistent long-term memory ID.
+    agent_memory_ids: dict[str, str]
+
+    # Persistent memory ID of the workflow summary, when available.
+    workflow_memory_id: str | None
+
+    # Optional memory-specific failure details.
+    memory_error: str | None
+
+    # ------------------------------------------------------------------
+    # Uploaded-file context
+    # ------------------------------------------------------------------
+
+    # Metadata for files attached to the workflow.
+    uploaded_files: list[dict[str, Any]]
 
     # ------------------------------------------------------------------
     # Raw input data

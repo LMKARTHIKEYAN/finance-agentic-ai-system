@@ -1,4 +1,3 @@
-
 """
 In-memory session storage for the Finance Agentic AI System.
 
@@ -127,7 +126,10 @@ class SessionRecord:
         self.updated_at = now
         self.expires_at = now + ttl
 
-    def is_expired(self, current_time: datetime | None = None) -> bool:
+    def is_expired(
+        self,
+        current_time: datetime | None = None,
+    ) -> bool:
         """
         Check whether the session has expired.
 
@@ -168,24 +170,6 @@ class SessionMemory:
 
     The manager keeps temporary information for active Finance Agentic AI
     conversations and workflows.
-
-    Example:
-        memory = SessionMemory()
-
-        session_id = memory.create_session(
-            metadata={"user_id": "user-001"}
-        )
-
-        memory.set(
-            session_id=session_id,
-            key="last_question",
-            value="Explain the June revenue variance.",
-        )
-
-        last_question = memory.get(
-            session_id=session_id,
-            key="last_question",
-        )
     """
 
     def __init__(
@@ -210,14 +194,27 @@ class SessionMemory:
                 If session_ttl_minutes or max_sessions is not positive.
         """
 
-        if session_ttl_minutes <= 0:
+        if (
+            not isinstance(session_ttl_minutes, int)
+            or isinstance(session_ttl_minutes, bool)
+            or session_ttl_minutes <= 0
+        ):
             raise ValueError(
                 "session_ttl_minutes must be positive"
             )
 
-        if max_sessions <= 0:
+        if (
+            not isinstance(max_sessions, int)
+            or isinstance(max_sessions, bool)
+            or max_sessions <= 0
+        ):
             raise ValueError(
                 "max_sessions must be positive"
+            )
+
+        if not isinstance(auto_refresh_ttl, bool):
+            raise TypeError(
+                "auto_refresh_ttl must be a boolean"
             )
 
         self._session_ttl = timedelta(
@@ -225,7 +222,6 @@ class SessionMemory:
         )
         self._max_sessions = max_sessions
         self._auto_refresh_ttl = auto_refresh_ttl
-
         self._sessions: dict[str, SessionRecord] = {}
         self._lock = RLock()
 
@@ -235,9 +231,6 @@ class SessionMemory:
         Return the number of active sessions.
 
         Expired sessions are removed before the count is returned.
-
-        Returns:
-            Number of active sessions.
         """
 
         with self._lock:
@@ -254,38 +247,43 @@ class SessionMemory:
 
         Args:
             session_id:
-                Optional custom session identifier. A UUID is generated when
-                this argument is not supplied.
+                Optional custom session identifier.
             metadata:
                 Optional session-level metadata.
 
         Returns:
             Created session identifier.
-
-        Raises:
-            ValueError:
-                If the session identifier is invalid or already exists.
-            RuntimeError:
-                If the maximum number of sessions has been reached.
         """
+
+        if metadata is not None and not isinstance(
+            metadata,
+            dict,
+        ):
+            raise TypeError(
+                "metadata must be a dictionary"
+            )
+
+        if session_id is None:
+            resolved_session_id = str(uuid4())
+        elif isinstance(session_id, str):
+            resolved_session_id = session_id.strip()
+        else:
+            raise ValueError(
+                "session_id must be a non-empty string"
+            )
+
+        if not resolved_session_id:
+            raise ValueError(
+                "session_id must be a non-empty string"
+            )
 
         with self._lock:
             self.cleanup_expired_sessions()
 
-            resolved_session_id = (
-                session_id.strip()
-                if isinstance(session_id, str)
-                else str(uuid4())
-            )
-
-            if not resolved_session_id:
-                raise ValueError(
-                    "session_id must be a non-empty string"
-                )
-
             if resolved_session_id in self._sessions:
                 raise ValueError(
-                    f"session already exists: {resolved_session_id}"
+                    "session already exists: "
+                    f"{resolved_session_id}"
                 )
 
             if len(self._sessions) >= self._max_sessions:
@@ -293,7 +291,9 @@ class SessionMemory:
 
             now = _utc_now()
 
-            self._sessions[resolved_session_id] = SessionRecord(
+            self._sessions[
+                resolved_session_id
+            ] = SessionRecord(
                 session_id=resolved_session_id,
                 created_at=now,
                 updated_at=now,
@@ -303,27 +303,30 @@ class SessionMemory:
 
             return resolved_session_id
 
-    def session_exists(self, session_id: str) -> bool:
+    def session_exists(
+        self,
+        session_id: str,
+    ) -> bool:
         """
         Check whether a non-expired session exists.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            True when the session exists and has not expired.
         """
 
-        resolved_session_id = self._validate_session_id(session_id)
+        resolved_session_id = self._validate_session_id(
+            session_id
+        )
 
         with self._lock:
-            session = self._sessions.get(resolved_session_id)
+            session = self._sessions.get(
+                resolved_session_id
+            )
 
             if session is None:
                 return False
 
             if session.is_expired():
-                del self._sessions[resolved_session_id]
+                del self._sessions[
+                    resolved_session_id
+                ]
                 return False
 
             return True
@@ -337,37 +340,37 @@ class SessionMemory:
     ) -> SessionMemoryEntry:
         """
         Create or replace a value in a session.
-
-        Args:
-            session_id: Existing session identifier.
-            key: Entry key.
-            value: Value to store.
-            metadata: Optional entry metadata.
-
-        Returns:
-            Copy of the created or updated memory entry.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
-            ValueError:
-                If the key is invalid.
         """
+
+        if metadata is not None and not isinstance(
+            metadata,
+            dict,
+        ):
+            raise TypeError(
+                "metadata must be a dictionary"
+            )
 
         resolved_key = self._validate_key(key)
 
         with self._lock:
-            session = self._require_session(session_id)
-
-            existing_entry = session.entries.get(resolved_key)
+            session = self._require_session(
+                session_id
+            )
+            existing_entry = session.entries.get(
+                resolved_key
+            )
 
             if existing_entry is None:
                 entry = SessionMemoryEntry(
                     key=resolved_key,
                     value=deepcopy(value),
-                    metadata=deepcopy(metadata or {}),
+                    metadata=deepcopy(
+                        metadata or {}
+                    ),
                 )
-                session.entries[resolved_key] = entry
+                session.entries[
+                    resolved_key
+                ] = entry
             else:
                 existing_entry.update(
                     value=value,
@@ -376,7 +379,6 @@ class SessionMemory:
                 entry = existing_entry
 
             self._touch_session(session)
-
             return deepcopy(entry)
 
     def get(
@@ -387,26 +389,17 @@ class SessionMemory:
     ) -> Any:
         """
         Retrieve a value from a session.
-
-        Args:
-            session_id: Existing session identifier.
-            key: Entry key.
-            default: Value returned when the key is not present.
-
-        Returns:
-            Deep copy of the stored value or the supplied default.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
         """
 
         resolved_key = self._validate_key(key)
 
         with self._lock:
-            session = self._require_session(session_id)
-            entry = session.entries.get(resolved_key)
-
+            session = self._require_session(
+                session_id
+            )
+            entry = session.entries.get(
+                resolved_key
+            )
             self._touch_session(session)
 
             if entry is None:
@@ -421,27 +414,18 @@ class SessionMemory:
     ) -> SessionMemoryEntry | None:
         """
         Retrieve a complete session-memory entry.
-
-        Args:
-            session_id: Existing session identifier.
-            key: Entry key.
-
-        Returns:
-            Copy of the memory entry, or None when the key does not exist.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
         """
 
         resolved_key = self._validate_key(key)
 
         with self._lock:
-            session = self._require_session(session_id)
-            entry = session.entries.get(resolved_key)
-
+            session = self._require_session(
+                session_id
+            )
+            entry = session.entries.get(
+                resolved_key
+            )
             self._touch_session(session)
-
             return deepcopy(entry)
 
     def update(
@@ -453,32 +437,30 @@ class SessionMemory:
     ) -> SessionMemoryEntry:
         """
         Update an existing entry.
-
-        Unlike set(), this method does not create missing entries.
-
-        Args:
-            session_id: Existing session identifier.
-            key: Existing entry key.
-            value: New value.
-            metadata: Optional replacement metadata.
-
-        Returns:
-            Copy of the updated entry.
-
-        Raises:
-            KeyError:
-                If the session or entry does not exist.
         """
+
+        if metadata is not None and not isinstance(
+            metadata,
+            dict,
+        ):
+            raise TypeError(
+                "metadata must be a dictionary"
+            )
 
         resolved_key = self._validate_key(key)
 
         with self._lock:
-            session = self._require_session(session_id)
-            entry = session.entries.get(resolved_key)
+            session = self._require_session(
+                session_id
+            )
+            entry = session.entries.get(
+                resolved_key
+            )
 
             if entry is None:
                 raise KeyError(
-                    f"session entry not found: {resolved_key}"
+                    "session entry not found: "
+                    f"{resolved_key}"
                 )
 
             entry.update(
@@ -486,7 +468,6 @@ class SessionMemory:
                 metadata=metadata,
             )
             self._touch_session(session)
-
             return deepcopy(entry)
 
     def delete(
@@ -496,24 +477,14 @@ class SessionMemory:
     ) -> bool:
         """
         Delete one entry from a session.
-
-        Args:
-            session_id: Existing session identifier.
-            key: Entry key.
-
-        Returns:
-            True if an entry was removed, otherwise False.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
         """
 
         resolved_key = self._validate_key(key)
 
         with self._lock:
-            session = self._require_session(session_id)
-
+            session = self._require_session(
+                session_id
+            )
             removed = session.entries.pop(
                 resolved_key,
                 None,
@@ -525,42 +496,36 @@ class SessionMemory:
 
             return False
 
-    def clear_session(self, session_id: str) -> int:
+    def clear_session(
+        self,
+        session_id: str,
+    ) -> int:
         """
-        Remove every entry from a session without deleting the session.
-
-        Args:
-            session_id: Existing session identifier.
-
-        Returns:
-            Number of removed entries.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
+        Remove every entry without deleting the session.
         """
 
         with self._lock:
-            session = self._require_session(session_id)
-            removed_count = len(session.entries)
-
+            session = self._require_session(
+                session_id
+            )
+            removed_count = len(
+                session.entries
+            )
             session.entries.clear()
             self._touch_session(session)
-
             return removed_count
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(
+        self,
+        session_id: str,
+    ) -> bool:
         """
         Delete a complete session.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            True if the session existed and was deleted.
         """
 
-        resolved_session_id = self._validate_session_id(session_id)
+        resolved_session_id = self._validate_session_id(
+            session_id
+        )
 
         with self._lock:
             return (
@@ -577,30 +542,20 @@ class SessionMemory:
     ) -> SessionRecord:
         """
         Retrieve a complete session record.
-
-        Args:
-            session_id: Existing session identifier.
-
-        Returns:
-            Deep copy of the session record.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
         """
 
         with self._lock:
-            session = self._require_session(session_id)
+            session = self._require_session(
+                session_id
+            )
             self._touch_session(session)
-
             return deepcopy(session)
 
-    def list_sessions(self) -> list[dict[str, Any]]:
+    def list_sessions(
+        self,
+    ) -> list[dict[str, Any]]:
         """
         Return summaries for all active sessions.
-
-        Returns:
-            List of session-summary dictionaries ordered by creation time.
         """
 
         with self._lock:
@@ -614,34 +569,38 @@ class SessionMemory:
             return [
                 {
                     "session_id": session.session_id,
-                    "created_at": session.created_at.isoformat(),
-                    "updated_at": session.updated_at.isoformat(),
-                    "expires_at": session.expires_at.isoformat(),
-                    "entry_count": len(session.entries),
-                    "metadata": deepcopy(session.metadata),
+                    "created_at": (
+                        session.created_at.isoformat()
+                    ),
+                    "updated_at": (
+                        session.updated_at.isoformat()
+                    ),
+                    "expires_at": (
+                        session.expires_at.isoformat()
+                    ),
+                    "entry_count": len(
+                        session.entries
+                    ),
+                    "metadata": deepcopy(
+                        session.metadata
+                    ),
                 }
                 for session in sessions
             ]
 
-    def list_keys(self, session_id: str) -> list[str]:
+    def list_keys(
+        self,
+        session_id: str,
+    ) -> list[str]:
         """
         Return all keys stored in a session.
-
-        Args:
-            session_id: Existing session identifier.
-
-        Returns:
-            Alphabetically sorted session keys.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
         """
 
         with self._lock:
-            session = self._require_session(session_id)
+            session = self._require_session(
+                session_id
+            )
             self._touch_session(session)
-
             return sorted(session.entries)
 
     def contains(
@@ -651,25 +610,15 @@ class SessionMemory:
     ) -> bool:
         """
         Check whether a key exists in a session.
-
-        Args:
-            session_id: Existing session identifier.
-            key: Entry key.
-
-        Returns:
-            True when the key exists.
-
-        Raises:
-            KeyError:
-                If the session does not exist.
         """
 
         resolved_key = self._validate_key(key)
 
         with self._lock:
-            session = self._require_session(session_id)
+            session = self._require_session(
+                session_id
+            )
             self._touch_session(session)
-
             return resolved_key in session.entries
 
     def update_session_metadata(
@@ -680,22 +629,6 @@ class SessionMemory:
     ) -> dict[str, Any]:
         """
         Update session-level metadata.
-
-        Args:
-            session_id: Existing session identifier.
-            metadata: Metadata values to apply.
-            merge:
-                If True, merge with existing metadata. If False, replace the
-                complete metadata dictionary.
-
-        Returns:
-            Copy of the updated metadata.
-
-        Raises:
-            TypeError:
-                If metadata is not a dictionary.
-            KeyError:
-                If the session does not exist.
         """
 
         if not isinstance(metadata, dict):
@@ -704,17 +637,20 @@ class SessionMemory:
             )
 
         with self._lock:
-            session = self._require_session(session_id)
+            session = self._require_session(
+                session_id
+            )
 
             if merge:
                 session.metadata.update(
                     deepcopy(metadata)
                 )
             else:
-                session.metadata = deepcopy(metadata)
+                session.metadata = deepcopy(
+                    metadata
+                )
 
             self._touch_session(session)
-
             return deepcopy(session.metadata)
 
     def cleanup_expired_sessions(
@@ -723,16 +659,11 @@ class SessionMemory:
     ) -> int:
         """
         Delete expired sessions.
-
-        Args:
-            current_time:
-                Optional comparison time for deterministic testing.
-
-        Returns:
-            Number of expired sessions removed.
         """
 
-        comparison_time = current_time or _utc_now()
+        comparison_time = (
+            current_time or _utc_now()
+        )
 
         if comparison_time.tzinfo is None:
             raise ValueError(
@@ -742,11 +673,16 @@ class SessionMemory:
         with self._lock:
             expired_session_ids = [
                 session_id
-                for session_id, session in self._sessions.items()
-                if session.is_expired(comparison_time)
+                for session_id, session
+                in self._sessions.items()
+                if session.is_expired(
+                    comparison_time
+                )
             ]
 
-            for session_id in expired_session_ids:
+            for session_id in (
+                expired_session_ids
+            ):
                 del self._sessions[session_id]
 
             return len(expired_session_ids)
@@ -754,15 +690,13 @@ class SessionMemory:
     def clear_all(self) -> int:
         """
         Delete all sessions.
-
-        Returns:
-            Number of sessions removed.
         """
 
         with self._lock:
-            removed_count = len(self._sessions)
+            removed_count = len(
+                self._sessions
+            )
             self._sessions.clear()
-
             return removed_count
 
     def _require_session(
@@ -771,30 +705,28 @@ class SessionMemory:
     ) -> SessionRecord:
         """
         Return an existing non-expired session.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            Matching session record.
-
-        Raises:
-            KeyError:
-                If the session does not exist or has expired.
         """
 
-        resolved_session_id = self._validate_session_id(session_id)
-        session = self._sessions.get(resolved_session_id)
+        resolved_session_id = self._validate_session_id(
+            session_id
+        )
+        session = self._sessions.get(
+            resolved_session_id
+        )
 
         if session is None:
             raise KeyError(
-                f"session not found: {resolved_session_id}"
+                "session not found: "
+                f"{resolved_session_id}"
             )
 
         if session.is_expired():
-            del self._sessions[resolved_session_id]
+            del self._sessions[
+                resolved_session_id
+            ]
             raise KeyError(
-                f"session expired: {resolved_session_id}"
+                "session expired: "
+                f"{resolved_session_id}"
             )
 
         return session
@@ -804,22 +736,21 @@ class SessionMemory:
         session: SessionRecord,
     ) -> None:
         """
-        Refresh the session timestamps when auto-refresh is enabled.
-
-        Args:
-            session: Session record to refresh.
+        Refresh session timestamps when enabled.
         """
 
         if self._auto_refresh_ttl:
-            session.touch(self._session_ttl)
+            session.touch(
+                self._session_ttl
+            )
         else:
             session.updated_at = _utc_now()
 
-    def _remove_oldest_session(self) -> None:
+    def _remove_oldest_session(
+        self,
+    ) -> None:
         """
         Remove the least recently updated session.
-
-        This prevents the memory manager from exceeding max_sessions.
         """
 
         if not self._sessions:
@@ -828,26 +759,22 @@ class SessionMemory:
         oldest_session_id = min(
             self._sessions,
             key=lambda session_id: (
-                self._sessions[session_id].updated_at
+                self._sessions[
+                    session_id
+                ].updated_at
             ),
         )
 
-        del self._sessions[oldest_session_id]
+        del self._sessions[
+            oldest_session_id
+        ]
 
     @staticmethod
-    def _validate_session_id(session_id: str) -> str:
+    def _validate_session_id(
+        session_id: str,
+    ) -> str:
         """
         Validate and normalize a session identifier.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            Normalized session identifier.
-
-        Raises:
-            ValueError:
-                If the identifier is invalid.
         """
 
         if not isinstance(session_id, str):
@@ -865,19 +792,11 @@ class SessionMemory:
         return normalized
 
     @staticmethod
-    def _validate_key(key: str) -> str:
+    def _validate_key(
+        key: str,
+    ) -> str:
         """
         Validate and normalize a memory key.
-
-        Args:
-            key: Entry key.
-
-        Returns:
-            Normalized key.
-
-        Raises:
-            ValueError:
-                If the key is invalid.
         """
 
         if not isinstance(key, str):

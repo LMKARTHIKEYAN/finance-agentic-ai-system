@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -55,7 +56,9 @@ class SampleFinanceResult:
 
 
 @pytest.fixture
-def memory(tmp_path: Path) -> LongTermMemory:
+def memory(
+    tmp_path: Path,
+) -> Generator[LongTermMemory, None, None]:
     """
     Create an isolated file-backed long-term memory instance.
     """
@@ -69,7 +72,8 @@ def memory(tmp_path: Path) -> LongTermMemory:
 
 
 @pytest.fixture
-def in_memory_database() -> LongTermMemory:
+def in_memory_database(
+) -> Generator[LongTermMemory, None, None]:
     """
     Create an isolated SQLite in-memory database.
     """
@@ -2329,4 +2333,3 @@ def test_realistic_get_latest_report(
     assert latest_report is not None
     assert latest_report.key == "chennai-2026-07"
     assert latest_report.value["period"] == "2026-07"
-

@@ -20,6 +20,7 @@ from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 
+from src.memory.memory_manager import MemoryManager
 from src.orchestrator.nodes import (
     anomaly_node,
     budget_node,
@@ -58,6 +59,211 @@ SUPPORTED_FLOWS = (
     "pnl",
     "full",
 )
+
+
+AGENT_RESULT_FIELDS: tuple[str, ...] = (
+    "operations_validation",
+    "budget_validation",
+    "corporate_expenses_validation",
+    "budget_corporate_expenses_validation",
+    "validation_result",
+    "operations_profile",
+    "budget_profile",
+    "corporate_expenses_profile",
+    "budget_corporate_expenses_profile",
+    "profile_result",
+    "operations_result",
+    "budget_result",
+    "forecast_result",
+    "scenario_result",
+    "variance_result",
+    "pnl_result",
+    "finance_rules_result",
+    "anomaly_result",
+    "root_cause_result",
+    "recommendation_result",
+    "kpi_result",
+    "commentary_result",
+    "report_result",
+)
+
+
+MEMORY_CONTEXT_FIELDS: tuple[str, ...] = (
+    "selected_flow",
+    "start_date",
+    "end_date",
+    "start_month",
+    "end_month",
+    "group_by",
+    "filters",
+    "frequency",
+    "rolling_window",
+    "forecast_periods",
+    "scenario_name",
+    "requested_kpis",
+)
+
+
+def _build_memory_workflow_context(
+    state: FinanceGraphState,
+) -> dict[str, Any]:
+    """Build lightweight workflow context for memory persistence."""
+
+    context: dict[str, Any] = {}
+
+    for field_name in MEMORY_CONTEXT_FIELDS:
+        if field_name in state:
+            context[field_name] = state[field_name]
+
+    return context
+
+
+def _prepare_memory_state(
+    initial_state: FinanceGraphState,
+    memory_manager: MemoryManager,
+) -> FinanceGraphState:
+    """Create or restore a memory session before graph execution."""
+
+    prepared_state = FinanceGraphState(**dict(initial_state))
+
+    try:
+        supplied_session_id = prepared_state.get("session_id")
+
+        if (
+            isinstance(supplied_session_id, str)
+            and supplied_session_id.strip()
+            and memory_manager.session_exists(supplied_session_id)
+        ):
+            session_id = supplied_session_id.strip()
+            memory_manager.set_question(
+                session_id,
+                prepared_state.get("user_request", ""),
+            )
+            memory_manager.set_uploaded_files(
+                session_id,
+                prepared_state.get("uploaded_files", []),
+            )
+            memory_manager.update_workflow_context(
+                session_id,
+                _build_memory_workflow_context(prepared_state),
+            )
+        else:
+            session_id = memory_manager.create_session(
+                user_id=prepared_state.get("user_id"),
+                question=prepared_state.get("user_request"),
+                uploaded_files=prepared_state.get(
+                    "uploaded_files",
+                    [],
+                ),
+                workflow_context=(
+                    _build_memory_workflow_context(prepared_state)
+                ),
+                metadata={
+                    "source": "langgraph",
+                    "component": "finance_graph",
+                },
+            )
+
+        workflow_id = memory_manager.get_workflow_id(session_id)
+        memory_manager.set_workflow_status(session_id, "RUNNING")
+        memory_context = memory_manager.build_context(session_id)
+
+        prepared_state.update(
+            {
+                "session_id": session_id,
+                "workflow_id": workflow_id,
+                "memory_context": memory_context,
+                "memory_status": "context_loaded",
+                "memory_error": None,
+                "agent_memory_ids": {},
+                "report_memory_id": None,
+                "workflow_memory_id": None,
+            }
+        )
+    except Exception as exc:  # pragma: no cover
+        prepared_state.update(
+            {
+                "memory_status": "failed",
+                "memory_error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+
+    return prepared_state
+
+
+def _store_graph_outputs_in_session(
+    result: FinanceGraphState,
+    memory_manager: MemoryManager,
+) -> None:
+    """Store available graph outputs in temporary session memory."""
+
+    session_id = result.get("session_id")
+
+    if not isinstance(session_id, str) or not session_id:
+        return
+
+    for field_name in AGENT_RESULT_FIELDS:
+        output = result.get(field_name)
+
+        if output is not None:
+            memory_manager.store_agent_output(
+                session_id,
+                field_name,
+                output,
+            )
+
+
+def _finalize_memory_state(
+    result: FinanceGraphState,
+    memory_manager: MemoryManager,
+) -> FinanceGraphState:
+    """Persist graph outputs and return generated memory identifiers."""
+
+    finalized_state = FinanceGraphState(**dict(result))
+    session_id = finalized_state.get("session_id")
+
+    if not isinstance(session_id, str) or not session_id:
+        return finalized_state
+
+    try:
+        finalized_state["memory_status"] = "saving"
+        _store_graph_outputs_in_session(
+            finalized_state,
+            memory_manager,
+        )
+
+        if finalized_state.get("execution_status") == "failed":
+            memory_manager.set_workflow_status(
+                session_id,
+                "FAILED",
+            )
+            finalized_state["memory_status"] = "saved"
+            return finalized_state
+
+        memory_result = memory_manager.complete_workflow(
+            session_id=session_id,
+            report=finalized_state.get("report_result"),
+            save_agents=True,
+        )
+
+        finalized_state.update(
+            {
+                "workflow_id": memory_result.workflow_id,
+                "report_memory_id": memory_result.report_memory_id,
+                "agent_memory_ids": memory_result.agent_memory_ids,
+                "memory_status": "saved",
+                "memory_error": None,
+            }
+        )
+    except Exception as exc:  # pragma: no cover
+        finalized_state.update(
+            {
+                "memory_status": "failed",
+                "memory_error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+
+    return finalized_state
 
 
 # ----------------------------------------------------------------------
@@ -718,19 +924,42 @@ finance_graph = build_finance_graph()
 
 def run_finance_graph(
     initial_state: FinanceGraphState,
+    *,
+    memory_manager: MemoryManager | None = None,
 ) -> FinanceGraphState:
     """
     Execute the compiled Finance Agentic AI graph.
 
+    Memory integration is enabled when ``memory_manager`` is supplied. This
+    keeps existing callers backward-compatible while allowing the service
+    layer to provide one shared MemoryManager in production.
+
     Args:
         initial_state:
-            Initial graph state containing at least ``user_request`` and the
-            data required by the selected flow.
+            Initial graph state containing ``user_request`` and route data.
+
+        memory_manager:
+            Optional shared MemoryManager used to create or restore a session,
+            load context, store agent outputs, and persist workflow results.
 
     Returns:
         Final graph state after successful completion or safe failure.
     """
 
-    result = finance_graph.invoke(initial_state)
+    prepared_state = (
+        _prepare_memory_state(initial_state, memory_manager)
+        if memory_manager is not None
+        else FinanceGraphState(**dict(initial_state))
+    )
 
-    return FinanceGraphState(**result)
+    result = FinanceGraphState(
+        **finance_graph.invoke(prepared_state)
+    )
+
+    if memory_manager is None:
+        return result
+
+    return _finalize_memory_state(
+        result,
+        memory_manager,
+    )
