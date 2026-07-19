@@ -3,16 +3,17 @@ Application service for the Finance Agentic AI API.
 
 This module coordinates:
 
-- Natural-language intent parsing
-- Temporary clarification handling
-- Deterministic execution planning
+- Natural-language finance intent parsing
+- Clarification handling
+- Source-data loading
+- Period and category filtering
+- Execution-plan creation
 - LangGraph workflow execution
-- Finance-agent result collection
-- Dashboard response building
+- Dashboard response generation
 - Finance response-context generation
 - RAG and OpenAI response generation
 
-It must not contain finance calculation formulas or Streamlit UI logic.
+Finance calculation formulas and Streamlit UI logic must not be placed here.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from dataclasses import (
     is_dataclass,
 )
 from enum import Enum
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
@@ -47,6 +49,9 @@ from src.rag.prompt_templates import PromptType
 from src.rag.rag_agent import FinanceRAGAgent
 
 
+logger = logging.getLogger(__name__)
+
+
 class FinanceAskServiceError(RuntimeError):
     """Raised when the service cannot complete a finance request."""
 
@@ -54,10 +59,10 @@ class FinanceAskServiceError(RuntimeError):
 @dataclass(frozen=True)
 class FinanceDataPaths:
     """
-    Paths to datasets used by the LangGraph workflow.
+    Paths to datasets used by the finance workflow.
 
-    These local CSV files support the current GitHub project. They can later
-    be replaced with Snowflake, S3 or database sources without changing the
+    These local files support the current GitHub project. They can later be
+    replaced by Snowflake, S3 or database sources without changing the public
     service contract.
     """
 
@@ -73,28 +78,28 @@ class AskServiceResult:
 
     Attributes:
         answer:
-            Final AI response or clarification question.
+            Final AI answer or clarification question.
 
         sources:
             Retrieved RAG source records.
 
         selected_flow:
-            Finance workflow selected from the user request.
+            Finance workflow selected from the request.
 
         execution_status:
-            Workflow status such as completed or clarification_required.
+            Workflow execution status.
 
         used_fallback:
-            Whether the RAG fallback response was used.
+            Whether RAG fallback generation was used.
 
         dashboard:
             Structured dashboard payload.
 
         clarification_required:
-            Whether the user must supply missing information.
+            Whether more information is required from the user.
 
         intent:
-            Serialized request intent detected from the user question.
+            Serialized parsed finance intent.
     """
 
     answer: str
@@ -115,22 +120,25 @@ GraphExecutor = Callable[
 
 class FinanceAskService:
     """
-    Coordinate intent parsing, LangGraph execution and RAG generation.
+    Coordinate intent parsing, filtering, graph execution and RAG generation.
 
     Processing flow:
 
-        User question
+        User request
             │
             ▼
         Intent parser
             │
-            ├── Missing information
-            │       └── Return clarification question
+            ├── Incomplete intent
+            │       └── Clarification response
             │
             └── Complete intent
                     │
                     ▼
-              Load required data
+              Load source data
+                    │
+                    ▼
+              Apply period/category filters
                     │
                     ▼
               Create execution plan
@@ -140,7 +148,7 @@ class FinanceAskService:
                     │
                     ├── Dashboard response
                     │
-                    └── RAG/OpenAI answer
+                    └── RAG/OpenAI response
     """
 
     def __init__(
@@ -157,15 +165,15 @@ class FinanceAskService:
                 Existing FinanceRAGAgent instance.
 
             data_paths:
-                Paths to local operations, budget and assumption files.
+                Paths to operations, budget and assumption files.
 
             graph_executor:
-                Existing LangGraph execution function. It remains injectable
-                so tests can provide a fake executor.
+                LangGraph execution function. This remains injectable so
+                tests can provide a fake executor.
 
         Raises:
             TypeError:
-                If a dependency is invalid.
+                If a supplied dependency is invalid.
         """
 
         if not hasattr(rag_agent, "run"):
@@ -204,11 +212,10 @@ class FinanceAskService:
         metadata_filter: dict[str, Any] | None = None,
     ) -> AskServiceResult:
         """
-        Answer one natural-language finance question.
+        Answer one natural-language finance request.
 
-        If the intent parser finds missing required information, the method
-        returns a clarification question without loading data, executing
-        LangGraph or calling the RAG agent.
+        If required information is missing, a clarification response is
+        returned without loading data, executing LangGraph or calling RAG.
 
         Args:
             question:
@@ -221,17 +228,16 @@ class FinanceAskService:
                 Optional minimum vector similarity score.
 
             metadata_filter:
-                Optional document metadata filter.
+                Optional RAG document metadata filter.
 
         Returns:
-            AskServiceResult containing either:
-
-            - A clarification question, or
-            - A completed AI answer and dashboard.
+            AskServiceResult containing a clarification response or completed
+            finance analysis.
 
         Raises:
             FinanceAskServiceError:
-                If planning, LangGraph, dashboard or RAG execution fails.
+                If parsing, planning, data filtering, graph execution,
+                dashboard generation or RAG generation fails.
         """
 
         cleaned_question = self._validate_question(
@@ -374,8 +380,7 @@ class FinanceAskService:
                     item.document.text
                 ),
             }
-            for item
-            in rag_result.retrieval_result.documents
+            for item in rag_result.retrieval_result.documents
         ]
 
         return AskServiceResult(
@@ -398,12 +403,11 @@ class FinanceAskService:
         intent: FinanceIntent,
     ) -> FinanceGraphState:
         """
-        Build the initial LangGraph state from parsed intent.
+        Build initial LangGraph state from the parsed finance intent.
 
-        Only datasets required by the selected finance flow are loaded.
-
-        The parsed period, comparison, category and KPI values are preserved
-        inside ``filters`` for downstream agents.
+        Operations and budget datasets are filtered before they are placed
+        into graph state. Therefore, downstream agents receive only records
+        belonging to the requested period and category.
         """
 
         selected_flow = intent.selected_flow
@@ -457,18 +461,42 @@ class FinanceAskService:
         }
 
         if selected_flow in operations_flows:
-            state["operations_data"] = (
-                self._load_csv(
-                    self._data_paths.operations
-                )
+            operations_data = self._load_csv(
+                self._data_paths.operations
             )
 
-        if selected_flow in budget_flows:
-            state["budget_data"] = (
-                self._load_csv(
-                    self._data_paths.budget
-                )
+            filtered_operations = self._apply_intent_filters(
+                dataframe=operations_data,
+                intent=intent,
+                dataset_name="operations",
             )
+
+            self._log_filtered_dataset(
+                dataframe=filtered_operations,
+                dataset_name="operations",
+                intent=intent,
+            )
+
+            state["operations_data"] = filtered_operations
+
+        if selected_flow in budget_flows:
+            budget_data = self._load_csv(
+                self._data_paths.budget
+            )
+
+            filtered_budget = self._apply_intent_filters(
+                dataframe=budget_data,
+                intent=intent,
+                dataset_name="budget",
+            )
+
+            self._log_filtered_dataset(
+                dataframe=filtered_budget,
+                dataset_name="budget",
+                intent=intent,
+            )
+
+            state["budget_data"] = filtered_budget
 
         if selected_flow in assumption_flows:
             state["business_assumptions"] = (
@@ -483,9 +511,7 @@ class FinanceAskService:
     def _build_clarification_result(
         intent: FinanceIntent,
     ) -> AskServiceResult:
-        """
-        Return a clarification response without running the workflow.
-        """
+        """Return a clarification response without executing the workflow."""
 
         clarification = (
             intent.clarification_question
@@ -555,11 +581,7 @@ class FinanceAskService:
     def _resolve_group_by(
         intent: FinanceIntent,
     ) -> str:
-        """
-        Resolve the grouping level from the parsed period.
-
-        A date range remains monthly by default for management reporting.
-        """
+        """Resolve the reporting grouping level from parsed period."""
 
         grouping_by_granularity = {
             "day": "day",
@@ -578,7 +600,7 @@ class FinanceAskService:
     def _resolve_frequency(
         intent: FinanceIntent,
     ) -> str:
-        """Resolve graph frequency from the parsed period."""
+        """Resolve graph execution frequency from parsed period."""
 
         frequency_by_granularity = {
             "day": "day",
@@ -593,13 +615,687 @@ class FinanceAskService:
             "month",
         )
 
+    @classmethod
+    def _apply_intent_filters(
+        cls,
+        *,
+        dataframe: pd.DataFrame,
+        intent: FinanceIntent,
+        dataset_name: str,
+    ) -> pd.DataFrame:
+        """
+        Apply parsed period and category filters before graph execution.
+
+        Args:
+            dataframe:
+                Raw source dataframe.
+
+            intent:
+                Structured finance intent.
+
+            dataset_name:
+                Human-readable source name used in validation errors.
+
+        Returns:
+            Filtered dataframe with index reset.
+
+        Raises:
+            FinanceAskServiceError:
+                If data is invalid, a requested filter cannot be applied or
+                no matching rows remain after filtering.
+        """
+
+        if not isinstance(
+            dataframe,
+            pd.DataFrame,
+        ):
+            raise FinanceAskServiceError(
+                f"{dataset_name} data must be a pandas DataFrame."
+            )
+
+        if dataframe.empty:
+            raise FinanceAskServiceError(
+                f"{dataset_name} data is empty."
+            )
+
+        filtered_data = dataframe.copy()
+
+        filtered_data = cls._filter_by_period(
+            dataframe=filtered_data,
+            intent=intent,
+            dataset_name=dataset_name,
+        )
+
+        filtered_data = cls._filter_by_category(
+            dataframe=filtered_data,
+            intent=intent,
+            dataset_name=dataset_name,
+        )
+
+        if filtered_data.empty:
+            period_label = (
+                intent.period.display_value
+                or "requested period"
+            )
+
+            category_label = (
+                intent.category
+                or "All Categories"
+            )
+
+            raise FinanceAskServiceError(
+                "No matching records were found in "
+                f"{dataset_name} data for period "
+                f"'{period_label}' and category "
+                f"'{category_label}'."
+            )
+
+        return filtered_data.reset_index(
+            drop=True
+        )
+
+    @classmethod
+    def _filter_by_period(
+        cls,
+        *,
+        dataframe: pd.DataFrame,
+        intent: FinanceIntent,
+        dataset_name: str,
+    ) -> pd.DataFrame:
+        """Filter data using the parsed inclusive start and end dates."""
+
+        start_date = intent.period.start_date
+        end_date = intent.period.end_date
+
+        if not start_date or not end_date:
+            return dataframe
+
+        parsed_dates = cls._extract_dataframe_dates(
+            dataframe
+        )
+
+        if parsed_dates is None:
+            raise FinanceAskServiceError(
+                "Unable to apply the requested reporting period because "
+                f"{dataset_name} data does not contain a supported date, "
+                "month, period or year column."
+            )
+
+        try:
+            start_timestamp = pd.Timestamp(
+                start_date
+            ).normalize()
+
+            end_timestamp = pd.Timestamp(
+                end_date
+            ).normalize()
+        except (TypeError, ValueError) as exc:
+            raise FinanceAskServiceError(
+                "Unable to apply the requested reporting period because "
+                "the parsed start or end date is invalid."
+            ) from exc
+
+        normalized_dates = pd.to_datetime(
+            parsed_dates,
+            errors="coerce",
+        ).dt.normalize()
+
+        period_mask = (
+            normalized_dates.notna()
+            & normalized_dates.ge(
+                start_timestamp
+            )
+            & normalized_dates.le(
+                end_timestamp
+            )
+        )
+
+        return dataframe.loc[
+            period_mask
+        ].copy()
+
+    @classmethod
+    def _extract_dataframe_dates(
+        cls,
+        dataframe: pd.DataFrame,
+    ) -> pd.Series | None:
+        """
+        Extract reporting dates from common source-data structures.
+
+        Supported structures include:
+
+        - A direct date column
+        - A month or period column
+        - A year-month column
+        - Separate year and month columns
+        """
+
+        direct_date_column = cls._find_dataframe_column(
+            dataframe=dataframe,
+            candidates=(
+                "date",
+                "order_date",
+                "transaction_date",
+                "report_date",
+                "reporting_date",
+                "business_date",
+                "month_date",
+            ),
+        )
+
+        if direct_date_column is not None:
+            return cls._parse_dataframe_dates(
+                dataframe[
+                    direct_date_column
+                ]
+            )
+
+        period_column = cls._find_dataframe_column(
+            dataframe=dataframe,
+            candidates=(
+                "period",
+                "reporting_period",
+                "month",
+                "year_month",
+                "yearmonth",
+                "month_year",
+                "monthyear",
+            ),
+        )
+
+        if period_column is not None:
+            return cls._parse_dataframe_dates(
+                dataframe[
+                    period_column
+                ]
+            )
+
+        year_column = cls._find_dataframe_column(
+            dataframe=dataframe,
+            candidates=(
+                "year",
+                "reporting_year",
+                "financial_year",
+                "calendar_year",
+            ),
+        )
+
+        month_column = cls._find_dataframe_column(
+            dataframe=dataframe,
+            candidates=(
+                "month",
+                "month_number",
+                "month_name",
+                "reporting_month",
+                "calendar_month",
+            ),
+        )
+
+        if (
+            year_column is not None
+            and month_column is not None
+        ):
+            return cls._parse_year_and_month_columns(
+                years=dataframe[
+                    year_column
+                ],
+                months=dataframe[
+                    month_column
+                ],
+            )
+
+        if year_column is not None:
+            year_values = pd.to_numeric(
+                dataframe[
+                    year_column
+                ],
+                errors="coerce",
+            )
+
+            return pd.to_datetime(
+                {
+                    "year": year_values,
+                    "month": 1,
+                    "day": 1,
+                },
+                errors="coerce",
+            )
+
+        return None
+
+    @staticmethod
+    def _parse_dataframe_dates(
+        values: pd.Series,
+    ) -> pd.Series:
+        """
+        Parse operational dates and monthly reporting periods.
+
+        Current project formats:
+        - Operations: DD-MM-YYYY
+        - Budget: YYYY-MM
+        """
+
+        text_values = (
+            values
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+        parsed_dates = pd.Series(
+            pd.NaT,
+            index=text_values.index,
+            dtype="datetime64[ns]",
+        )
+
+        formats = (
+            "%d-%m-%Y",
+            "%d/%m/%Y",
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+            "%Y-%m",
+            "%Y/%m",
+            "%m/%Y",
+            "%B %Y",
+            "%b %Y",
+            "%B-%Y",
+            "%b-%Y",
+        )
+
+        for date_format in formats:
+            unresolved_mask = (
+                parsed_dates.isna()
+                & text_values.ne("")
+            )
+
+            if not unresolved_mask.any():
+                break
+
+            converted_values = pd.to_datetime(
+                text_values.loc[unresolved_mask],
+                format=date_format,
+                errors="coerce",
+            )
+
+            parsed_dates.loc[
+                unresolved_mask
+            ] = converted_values
+
+        unresolved_mask = (
+            parsed_dates.isna()
+            & text_values.ne("")
+        )
+
+        if unresolved_mask.any():
+            parsed_dates.loc[
+                unresolved_mask
+            ] = pd.to_datetime(
+                text_values.loc[unresolved_mask],
+                errors="coerce",
+                dayfirst=True,
+            )
+
+        return parsed_dates
+
+    @classmethod
+    def _parse_year_and_month_columns(
+        cls,
+        *,
+        years: pd.Series,
+        months: pd.Series,
+    ) -> pd.Series:
+        """Convert separate year and month columns into timestamps."""
+
+        parsed_years = pd.to_numeric(
+            years,
+            errors="coerce",
+        )
+
+        parsed_months = months.map(
+            cls._parse_month_value
+        )
+
+        return pd.to_datetime(
+            {
+                "year": parsed_years,
+                "month": parsed_months,
+                "day": 1,
+            },
+            errors="coerce",
+        )
+
+    @staticmethod
+    def _parse_month_value(
+        value: Any,
+    ) -> float:
+        """Convert numeric or named month values into month numbers."""
+
+        if pd.isna(value):
+            return float("nan")
+
+        cleaned_value = str(
+            value
+        ).strip()
+
+        if not cleaned_value:
+            return float("nan")
+
+        try:
+            numeric_month = int(
+                float(cleaned_value)
+            )
+
+            if 1 <= numeric_month <= 12:
+                return float(
+                    numeric_month
+                )
+        except ValueError:
+            pass
+
+        month_mapping = {
+            "january": 1,
+            "jan": 1,
+            "february": 2,
+            "feb": 2,
+            "march": 3,
+            "mar": 3,
+            "april": 4,
+            "apr": 4,
+            "may": 5,
+            "june": 6,
+            "jun": 6,
+            "july": 7,
+            "jul": 7,
+            "august": 8,
+            "aug": 8,
+            "september": 9,
+            "sep": 9,
+            "sept": 9,
+            "october": 10,
+            "oct": 10,
+            "november": 11,
+            "nov": 11,
+            "december": 12,
+            "dec": 12,
+        }
+
+        month_number = month_mapping.get(
+            cleaned_value.lower()
+        )
+
+        if month_number is None:
+            return float("nan")
+
+        return float(
+            month_number
+        )
+
+    @classmethod
+    def _filter_by_category(
+        cls,
+        *,
+        dataframe: pd.DataFrame,
+        intent: FinanceIntent,
+        dataset_name: str,
+    ) -> pd.DataFrame:
+        """Filter source data by requested business category."""
+
+        requested_category = intent.category
+
+        if not requested_category:
+            return dataframe
+
+        category_column = cls._find_dataframe_column(
+            dataframe=dataframe,
+            candidates=(
+                "category",
+                "vehicle_category",
+                "service_category",
+                "business_category",
+                "product",
+                "product_category",
+                "segment",
+                "vehicle_type",
+                "service_type",
+            ),
+        )
+
+        if category_column is None:
+            raise FinanceAskServiceError(
+                "Unable to apply category filter "
+                f"'{requested_category}' because {dataset_name} data "
+                "does not contain a supported category column."
+            )
+
+        requested_value = cls._normalize_filter_value(
+            requested_category
+        )
+
+        accepted_aliases = cls._category_aliases(
+            requested_value
+        )
+
+        normalized_categories = (
+            dataframe[
+                category_column
+            ]
+            .fillna("")
+            .astype(str)
+            .map(
+                cls._normalize_filter_value
+            )
+        )
+
+        category_mask = normalized_categories.isin(
+            accepted_aliases
+        )
+
+        return dataframe.loc[
+            category_mask
+        ].copy()
+
+    @staticmethod
+    def _find_dataframe_column(
+        *,
+        dataframe: pd.DataFrame,
+        candidates: tuple[str, ...],
+    ) -> str | None:
+        """Find a dataframe column using normalized column names."""
+
+        normalized_columns = {
+            FinanceAskService._normalize_column_name(
+                column
+            ): str(column)
+            for column in dataframe.columns
+        }
+
+        for candidate in candidates:
+            normalized_candidate = (
+                FinanceAskService
+                ._normalize_column_name(
+                    candidate
+                )
+            )
+
+            matched_column = normalized_columns.get(
+                normalized_candidate
+            )
+
+            if matched_column is not None:
+                return matched_column
+
+        return None
+
+    @staticmethod
+    def _normalize_column_name(
+        value: Any,
+    ) -> str:
+        """Normalize a dataframe column name for matching."""
+
+        return (
+            str(value)
+            .strip()
+            .lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+            .replace("/", "_")
+            .replace("%", "percentage")
+        )
+
+    @staticmethod
+    def _normalize_filter_value(
+        value: Any,
+    ) -> str:
+        """Normalize category values for case-insensitive matching."""
+
+        return " ".join(
+            str(value)
+            .strip()
+            .lower()
+            .replace("-", " ")
+            .replace("_", " ")
+            .replace("&", " and ")
+            .split()
+        )
+
+    @staticmethod
+    def _category_aliases(
+        normalized_category: str,
+    ) -> set[str]:
+        """Return supported aliases for common business categories."""
+
+        alias_groups = (
+            {
+                "2w",
+                "2 wheeler",
+                "two wheeler",
+                "2 wheelers",
+                "two wheelers",
+            },
+            {
+                "3w",
+                "3 wheeler",
+                "three wheeler",
+                "3 wheelers",
+                "three wheelers",
+            },
+            {
+                "compact auto",
+                "compactauto",
+                "compact autos",
+            },
+            {
+                "tata ace open",
+                "tata ace open body",
+            },
+            {
+                "tata ace close",
+                "tata ace closed",
+                "tata ace closed body",
+            },
+            {
+                "tata ace",
+            },
+            {
+                "packer and movers",
+                "packers and movers",
+                "packer movers",
+                "packers movers",
+            },
+        )
+
+        for alias_group in alias_groups:
+            if normalized_category in alias_group:
+                return alias_group
+
+        return {
+            normalized_category
+        }
+
+    @classmethod
+    def _log_filtered_dataset(
+        cls,
+        *,
+        dataframe: pd.DataFrame,
+        dataset_name: str,
+        intent: FinanceIntent,
+    ) -> None:
+        """Log a compact summary after period/category filtering."""
+
+        summary: dict[str, Any] = {
+            "dataset": dataset_name,
+            "period": intent.period.display_value,
+            "category": intent.category or "All Categories",
+            "rows": int(len(dataframe)),
+        }
+
+        category_column = cls._find_dataframe_column(
+            dataframe=dataframe,
+            candidates=(
+                "vehicle_category",
+                "category",
+                "service_category",
+                "business_category",
+                "product_category",
+                "segment",
+            ),
+        )
+
+        if category_column is not None:
+            summary["categories"] = (
+                dataframe[category_column]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+
+        if dataset_name == "operations":
+            if (
+                "fare" in dataframe.columns
+                and "order_status" in dataframe.columns
+            ):
+                completed_mask = (
+                    dataframe["order_status"]
+                    .fillna("")
+                    .astype(str)
+                    .str.casefold()
+                    .eq("completed")
+                )
+                summary["completed_revenue"] = float(
+                    pd.to_numeric(
+                        dataframe.loc[completed_mask, "fare"],
+                        errors="coerce",
+                    ).fillna(0).sum()
+                )
+
+        if dataset_name == "budget":
+            if "budget_orders" in dataframe.columns:
+                summary["budget_orders"] = float(
+                    pd.to_numeric(
+                        dataframe["budget_orders"],
+                        errors="coerce",
+                    ).fillna(0).sum()
+                )
+
+            if "budget_revenue" in dataframe.columns:
+                summary["budget_revenue"] = float(
+                    pd.to_numeric(
+                        dataframe["budget_revenue"],
+                        errors="coerce",
+                    ).fillna(0).sum()
+                )
+
+        logger.info(
+            "Finance input filter applied: %s",
+            summary,
+        )
+
     @staticmethod
     def _resolve_prompt_type(
         selected_flow: str,
     ) -> PromptType:
-        """
-        Map a finance workflow to the matching RAG prompt type.
-        """
+        """Map a finance workflow to its corresponding RAG prompt type."""
 
         normalized_flow = (
             str(selected_flow)
@@ -633,7 +1329,7 @@ class FinanceAskService:
 
         Raises:
             FinanceAskServiceError:
-                If the file is unavailable or cannot be loaded.
+                If the file is missing or cannot be loaded.
         """
 
         if not path.exists():
@@ -642,7 +1338,9 @@ class FinanceAskService:
             )
 
         try:
-            return pd.read_csv(path)
+            return pd.read_csv(
+                path
+            )
         except Exception as exc:
             raise FinanceAskServiceError(
                 f"Unable to load data file "
@@ -654,9 +1352,9 @@ class FinanceAskService:
         state: FinanceGraphState,
     ) -> dict[str, Any]:
         """
-        Extract and serialize existing agent outputs from graph state.
+        Extract and serialize agent outputs from graph state.
 
-        No financial calculation occurs here.
+        No finance calculation occurs in this method.
         """
 
         result_fields = (
@@ -676,10 +1374,14 @@ class FinanceAskService:
 
         return {
             field_name: FinanceAskService._serialize(
-                state[field_name]
+                state[
+                    field_name
+                ]
             )
             for field_name in result_fields
-            if state.get(field_name) is not None
+            if state.get(
+                field_name
+            ) is not None
         }
 
     @staticmethod
@@ -726,18 +1428,30 @@ class FinanceAskService:
                 asdict(value)
             )
 
-        if isinstance(value, pd.DataFrame):
+        if isinstance(
+            value,
+            pd.DataFrame,
+        ):
             return value.to_dict(
                 orient="records"
             )
 
-        if isinstance(value, pd.Series):
+        if isinstance(
+            value,
+            pd.Series,
+        ):
             return value.to_dict()
 
-        if isinstance(value, Enum):
+        if isinstance(
+            value,
+            Enum,
+        ):
             return value.value
 
-        if isinstance(value, dict):
+        if isinstance(
+            value,
+            dict,
+        ):
             return {
                 str(key): FinanceAskService._serialize(
                     item
@@ -750,13 +1464,20 @@ class FinanceAskService:
             (list, tuple, set),
         ):
             return [
-                FinanceAskService._serialize(item)
+                FinanceAskService._serialize(
+                    item
+                )
                 for item in value
             ]
 
         if (
-            hasattr(value, "item")
-            and callable(value.item)
+            hasattr(
+                value,
+                "item",
+            )
+            and callable(
+                value.item
+            )
         ):
             try:
                 return value.item()
@@ -769,7 +1490,7 @@ class FinanceAskService:
     def _validate_question(
         question: str,
     ) -> str:
-        """Validate and clean a submitted finance question."""
+        """Validate and normalize a submitted finance question."""
 
         if not isinstance(
             question,

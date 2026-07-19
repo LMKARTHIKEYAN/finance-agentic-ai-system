@@ -1,516 +1,949 @@
 """
-Streamlit dashboard for the Finance Agentic AI platform.
+Streamlit interface for the Finance Agentic AI System.
 
-This module provides the presentation layer for the existing FastAPI
-backend.
+The UI supports:
 
-It is responsible only for:
+- Natural-language finance requests
+- Clarification and temporary slot filling
+- KPI cards
+- Executive summaries
+- Trend charts
+- Variance bridge charts
+- Finance tables
+- Recommendations
+- Risks
+- Management commentary
+- RAG source references
 
-- Dashboard filters
-- Report selection
-- API request submission
-- KPI card presentation
-- Finance table presentation
-- Commentary presentation
-- Recommendation and risk presentation
-- Source presentation
-
-It must not contain finance calculations, LangGraph execution, RAG logic
-or direct database access.
+The Streamlit application communicates only with the FastAPI backend.
+It must not contain finance calculations, LangGraph execution or data access.
 """
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from src.ui.api_client import (
+    FinanceApiClientError,
     FinanceApiConnectionError,
     FinanceApiResponseError,
     ask_finance_question,
 )
 
 
-PAGE_TITLE = "Finance Agentic AI Dashboard"
-PAGE_ICON = "📊"
+APP_TITLE = "Finance Agentic AI"
+
+APP_SUBTITLE = (
+    "Natural-language FP&A analysis, insights and management reporting"
+)
+
 DEFAULT_TOP_K = 5
 
-ANALYSIS_TYPES = (
-    "Management Report",
-    "KPI Analysis",
-    "Variance Analysis",
-    "Budget Analysis",
-    "Forecast Analysis",
-    "Scenario Analysis",
-)
-
-COMPARISON_TYPES = (
-    "Actual vs Budget",
-    "Actual vs Forecast",
-    "Actual vs Last Year",
-)
-
-REPORT_FREQUENCIES = (
-    "Daily",
-    "Weekly",
-    "Monthly",
-)
-
-SCENARIO_TYPES = (
-    "Management Case",
-    "Base Case",
-    "Upside Case",
-    "Downside Case",
-)
-
-DEFAULT_CATEGORIES = (
-    "All Categories",
-    "2W",
-    "3W",
-    "Tata Ace",
-    "Packer & Movers",
+EXAMPLE_QUESTIONS = (
+    "Show actual vs budget revenue variance for January 2026",
+    "Show revenue, orders, AOV and fulfillment for March 2026",
+    "Show KPI performance for 3W for January 2026",
+    "Show forecast performance for 2026",
+    (
+        "Show actual vs budget variance from "
+        "1 January 2026 to 31 March 2026"
+    ),
 )
 
 
-def configure_page() -> None:
+def main() -> None:
+    """Run the Streamlit Finance Agentic AI application."""
+
+    _configure_page()
+    _initialize_session_state()
+    _render_sidebar()
+    _render_header()
+    _render_conversation()
+
+    pending_request = st.session_state.get(
+        "pending_request"
+    )
+
+    if pending_request:
+        input_placeholder = (
+            "Enter the missing period, for example: January 2026"
+        )
+    else:
+        input_placeholder = "Ask a finance question..."
+
+    submitted_question = st.chat_input(
+        input_placeholder
+    )
+
+    if submitted_question:
+        _process_user_message(
+            submitted_question
+        )
+        return
+
+    latest_response = st.session_state.get(
+        "latest_response"
+    )
+
+    if (
+        isinstance(latest_response, dict)
+        and latest_response
+        and not latest_response.get(
+            "clarification_required",
+            False,
+        )
+    ):
+        _render_response_metadata(
+            latest_response
+        )
+
+        dashboard = latest_response.get(
+            "dashboard"
+        )
+
+        if (
+            isinstance(dashboard, dict)
+            and dashboard
+        ):
+            _render_dashboard(
+                dashboard
+            )
+
+        _render_ai_answer(
+            latest_response
+        )
+
+        _render_sources(
+            latest_response.get(
+                "sources",
+                [],
+            )
+        )
+
+
+def _configure_page() -> None:
     """Configure the Streamlit browser page."""
 
     st.set_page_config(
-        page_title=PAGE_TITLE,
-        page_icon=PAGE_ICON,
+        page_title=APP_TITLE,
+        page_icon="📊",
         layout="wide",
         initial_sidebar_state="expanded",
     )
 
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 1.5rem;
+            padding-bottom: 3rem;
+            max-width: 1600px;
+        }
 
-def initialize_session_state() -> None:
-    """Initialize values retained across Streamlit reruns."""
+        [data-testid="stMetric"] {
+            background-color: rgba(128, 128, 128, 0.06);
+            border: 1px solid rgba(128, 128, 128, 0.20);
+            border-radius: 10px;
+            padding: 1rem;
+        }
 
-    defaults = {
-        "finance_response": None,
-        "finance_error": None,
-        "selected_period": date.today().replace(day=1),
-        "selected_analysis": "Management Report",
-        "selected_comparison": "Actual vs Budget",
-        "selected_frequency": "Monthly",
-        "selected_category": "All Categories",
-        "selected_scenario": "Management Case",
-    }
+        [data-testid="stMetricLabel"] {
+            font-weight: 600;
+        }
 
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+        .finance-subtitle {
+            color: rgba(128, 128, 128, 0.95);
+            margin-top: -0.7rem;
+            margin-bottom: 1.2rem;
+        }
 
-
-def render_header() -> None:
-    """Render the dashboard title and current scope."""
-
-    left_column, right_column = st.columns(
-        [4, 1]
+        .clarification-box {
+            background-color: rgba(255, 193, 7, 0.08);
+            border: 1px solid rgba(255, 193, 7, 0.40);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
-    with left_column:
-        st.title(
-            f"{PAGE_ICON} {PAGE_TITLE}"
-        )
-        st.caption(
-            "Chennai Branch | FP&A Management Dashboard"
-        )
 
-    with right_column:
-        response = st.session_state.finance_response
+def _initialize_session_state() -> None:
+    """Initialize session-state values used by the application."""
 
-        if isinstance(response, dict):
-            status = response.get(
-                "execution_status",
-                "unknown",
-            )
-            st.metric(
-                label="Workflow Status",
-                value=str(status).title(),
-            )
+    defaults: dict[str, Any] = {
+        "messages": [],
+        "pending_request": None,
+        "pending_intent": {},
+        "latest_response": None,
+        "top_k": DEFAULT_TOP_K,
+        "show_intent_details": False,
+        "request_in_progress": False,
+    }
+
+    for key, default_value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
 
 
-def render_sidebar() -> dict[str, Any]:
-    """
-    Render dashboard controls.
-
-    Returns:
-        Selected filter values and action status.
-    """
+def _render_sidebar() -> None:
+    """Render application controls and example questions."""
 
     with st.sidebar:
-        st.header("Dashboard Filters")
+        st.header("Finance AI Controls")
 
-        selected_period = st.date_input(
-            label="Period",
-            value=st.session_state.selected_period,
-            help="Select any date within the reporting month.",
-        )
-
-        selected_analysis = st.selectbox(
-            label="Analysis Type",
-            options=ANALYSIS_TYPES,
-            index=ANALYSIS_TYPES.index(
-                st.session_state.selected_analysis
+        st.session_state.top_k = st.slider(
+            "RAG sources",
+            min_value=1,
+            max_value=20,
+            value=int(
+                st.session_state.top_k
+            ),
+            help=(
+                "Maximum number of reference documents "
+                "retrieved for the AI response."
             ),
         )
 
-        selected_comparison = st.selectbox(
-            label="Comparison",
-            options=COMPARISON_TYPES,
-            index=COMPARISON_TYPES.index(
-                st.session_state.selected_comparison
+        st.session_state.show_intent_details = st.toggle(
+            "Show interpreted request",
+            value=bool(
+                st.session_state.show_intent_details
             ),
         )
 
-        selected_frequency = st.selectbox(
-            label="Report Frequency",
-            options=REPORT_FREQUENCIES,
-            index=REPORT_FREQUENCIES.index(
-                st.session_state.selected_frequency
-            ),
-        )
+        st.divider()
 
-        selected_category = st.selectbox(
-            label="Category",
-            options=DEFAULT_CATEGORIES,
-            index=DEFAULT_CATEGORIES.index(
-                st.session_state.selected_category
-            ),
-        )
+        st.subheader("Example questions")
 
-        selected_scenario = (
-            st.selectbox(
-                label="Scenario",
-                options=SCENARIO_TYPES,
-                index=SCENARIO_TYPES.index(
-                    st.session_state.selected_scenario
+        for index, example in enumerate(
+            EXAMPLE_QUESTIONS
+        ):
+            if st.button(
+                example,
+                key=f"example_question_{index}",
+                use_container_width=True,
+                disabled=bool(
+                    st.session_state.request_in_progress
                 ),
+            ):
+                _process_user_message(
+                    example
+                )
+
+        st.divider()
+
+        if st.button(
+            "Clear conversation",
+            use_container_width=True,
+        ):
+            _clear_conversation()
+
+        pending_request = st.session_state.get(
+            "pending_request"
+        )
+
+        if pending_request:
+            st.warning(
+                "Waiting for reporting period"
             )
-            if selected_analysis == "Scenario Analysis"
-            else st.session_state.selected_scenario
-        )
 
-        st.divider()
+            st.caption(
+                f"Original request: {pending_request}"
+            )
 
-        run_analysis = st.button(
-            label="Run Analysis",
-            type="primary",
-            use_container_width=True,
-        )
+            st.caption(
+                "Enter only the missing information in the chat box."
+            )
 
-        st.subheader("Quick Reports")
-
-        daily_report = st.button(
-            label="Daily Report",
-            use_container_width=True,
-        )
-
-        weekly_report = st.button(
-            label="Weekly Report",
-            use_container_width=True,
-        )
-
-        monthly_report = st.button(
-            label="Monthly Report",
-            use_container_width=True,
-        )
-
-        st.divider()
-
-        st.caption(
-            "All dashboard data currently represents "
-            "the Chennai branch."
-        )
-
-    st.session_state.selected_period = selected_period
-    st.session_state.selected_analysis = selected_analysis
-    st.session_state.selected_comparison = selected_comparison
-    st.session_state.selected_frequency = selected_frequency
-    st.session_state.selected_category = selected_category
-    st.session_state.selected_scenario = selected_scenario
-
-    selected_action = None
-
-    if run_analysis:
-        selected_action = "analysis"
-    elif daily_report:
-        selected_action = "daily"
-    elif weekly_report:
-        selected_action = "weekly"
-    elif monthly_report:
-        selected_action = "monthly"
-
-    return {
-        "period": selected_period,
-        "analysis_type": selected_analysis,
-        "comparison": selected_comparison,
-        "frequency": selected_frequency,
-        "category": selected_category,
-        "scenario": selected_scenario,
-        "action": selected_action,
-    }
+            st.code(
+                "January 2026",
+                language=None,
+            )
 
 
-def build_dashboard_question(
-    filters: dict[str, Any],
-) -> str:
-    """
-    Build a controlled finance request from dashboard filters.
+def _render_header() -> None:
+    """Render the application title and introduction."""
 
-    Args:
-        filters:
-            Selected dashboard filter values.
+    st.title(APP_TITLE)
 
-    Returns:
-        Natural-language finance request sent to FastAPI.
-    """
-
-    selected_period = filters["period"]
-    period_text = selected_period.strftime(
-        "%B %Y"
+    st.markdown(
+        f'<p class="finance-subtitle">{APP_SUBTITLE}</p>',
+        unsafe_allow_html=True,
     )
 
-    action = filters.get("action")
-
-    frequency = filters["frequency"]
-
-    if action == "daily":
-        frequency = "Daily"
-    elif action == "weekly":
-        frequency = "Weekly"
-    elif action == "monthly":
-        frequency = "Monthly"
-
-    request_parts = [
-        f"Generate a {frequency.lower()} "
-        f"{filters['analysis_type'].lower()}",
-        f"for Chennai branch for {period_text}",
-        f"using {filters['comparison']}",
-    ]
-
-    if filters["category"] != "All Categories":
-        request_parts.append(
-            f"for the {filters['category']} category"
+    if not st.session_state.messages:
+        st.info(
+            "Ask for KPI, budget, forecast, variance, scenario "
+            "or management commentary. Include a reporting period "
+            "when possible."
         )
 
-    if filters["analysis_type"] == "Scenario Analysis":
-        request_parts.append(
-            f"using the {filters['scenario']} scenario"
-        )
-
-    request_parts.append(
-        "Include KPI performance, financial tables, "
-        "variance analysis, executive summary, risks, "
-        "recommendations and management commentary."
+    pending_request = st.session_state.get(
+        "pending_request"
     )
 
-    return ". ".join(request_parts)
+    if pending_request:
+        st.markdown(
+            """
+            <div class="clarification-box">
+                <strong>Clarification required</strong><br>
+                Enter only the missing reporting period below.<br><br>
+                Examples: <code>January 2026</code>,
+                <code>20 October 2026</code>, or
+                <code>1 January 2026 to 31 March 2026</code>.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
-def process_dashboard_request(
-    filters: dict[str, Any],
+def _render_conversation() -> None:
+    """Render user and assistant chat history."""
+
+    for message in st.session_state.messages:
+        role = str(
+            message.get(
+                "role",
+                "assistant",
+            )
+        )
+
+        content = str(
+            message.get(
+                "content",
+                "",
+            )
+        )
+
+        with st.chat_message(role):
+            st.markdown(content)
+
+
+def _process_user_message(
+    user_message: str,
 ) -> None:
     """
-    Submit a dashboard request to FastAPI.
+    Submit a user request to FastAPI.
 
-    Args:
-        filters:
-            Selected dashboard filter values.
+    If a clarification is pending, the new message is combined with the
+    original incomplete request.
     """
 
-    question = build_dashboard_question(
-        filters
+    normalized_message = " ".join(
+        str(user_message).split()
     )
 
-    st.session_state.finance_error = None
+    if not normalized_message:
+        return
+
+    if st.session_state.request_in_progress:
+        return
+
+    pending_request = st.session_state.get(
+        "pending_request"
+    )
+
+    if (
+        pending_request
+        and _is_repeated_pending_request(
+            original_request=str(
+                pending_request
+            ),
+            new_message=normalized_message,
+        )
+    ):
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": normalized_message,
+            }
+        )
+
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "Please enter only the missing reporting period. "
+                    "For example: **January 2026**."
+                ),
+            }
+        )
+
+        st.rerun()
+        return
+
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": normalized_message,
+        }
+    )
+
+    if pending_request:
+        api_question = _combine_pending_request(
+            original_request=str(
+                pending_request
+            ),
+            clarification_answer=normalized_message,
+        )
+    else:
+        api_question = normalized_message
+
+    st.session_state.request_in_progress = True
 
     try:
         with st.spinner(
             "Running finance analysis..."
         ):
             response = ask_finance_question(
-                question=question,
-                top_k=DEFAULT_TOP_K,
-                metadata_filter={},
+                question=api_question,
+                top_k=int(
+                    st.session_state.top_k
+                ),
             )
 
-    except ValueError as exc:
-        st.session_state.finance_error = str(exc)
-        return
-
     except FinanceApiConnectionError as exc:
-        st.session_state.finance_error = (
-            "The Finance AI backend could not be reached. "
-            "Confirm that FastAPI is running.\n\n"
-            f"{exc}"
+        _record_ui_error(
+            title="Finance API connection failed",
+            message=str(exc),
         )
         return
 
     except FinanceApiResponseError as exc:
-        st.session_state.finance_error = (
-            "The Finance AI backend returned an error.\n\n"
-            f"{exc}"
+        _record_ui_error(
+            title="Finance API returned an invalid response",
+            message=str(exc),
         )
         return
 
-    except Exception as exc:
-        st.session_state.finance_error = (
-            "An unexpected error occurred.\n\n"
-            f"{exc}"
+    except FinanceApiClientError as exc:
+        _record_ui_error(
+            title="Finance request failed",
+            message=str(exc),
         )
         return
 
-    st.session_state.finance_response = response
+    except (TypeError, ValueError) as exc:
+        _record_ui_error(
+            title="Invalid finance request",
+            message=str(exc),
+        )
+        return
+
+    finally:
+        st.session_state.request_in_progress = False
+
+    _handle_api_response(
+        response=response,
+        submitted_request=api_question,
+    )
+
+    st.rerun()
 
 
-def render_error() -> None:
-    """Display the latest dashboard error."""
+def _is_repeated_pending_request(
+    *,
+    original_request: str,
+    new_message: str,
+) -> bool:
+    """
+    Determine whether the user repeated the incomplete request.
 
-    error = st.session_state.finance_error
+    This prevents the same clarification question from being submitted again.
+    """
 
-    if error:
-        st.error(error)
+    normalized_original = _normalize_comparison_text(
+        original_request
+    )
+
+    normalized_new_message = _normalize_comparison_text(
+        new_message
+    )
+
+    if normalized_original == normalized_new_message:
+        return True
+
+    if (
+        len(normalized_new_message) > 20
+        and normalized_new_message
+        in normalized_original
+    ):
+        return True
+
+    return False
 
 
-def render_report_context(
-    filters: dict[str, Any],
+def _normalize_comparison_text(
+    value: str,
+) -> str:
+    """Normalize text for simple duplicate-request comparison."""
+
+    return (
+        " ".join(
+            str(value).lower().split()
+        )
+        .strip()
+        .rstrip(".")
+    )
+
+
+def _combine_pending_request(
+    *,
+    original_request: str,
+    clarification_answer: str,
+) -> str:
+    """
+    Combine an incomplete request with the user's clarification.
+
+    Example:
+
+        Original:
+            Show actual vs budget revenue variance
+
+        Clarification:
+            January 2026
+
+        Combined:
+            Show actual vs budget revenue variance for January 2026
+    """
+
+    cleaned_original = (
+        original_request
+        .strip()
+        .rstrip(".")
+    )
+
+    cleaned_answer = (
+        clarification_answer
+        .strip()
+        .rstrip(".")
+    )
+
+    return (
+        f"{cleaned_original} for "
+        f"{cleaned_answer}"
+    )
+
+
+def _handle_api_response(
+    *,
+    response: dict[str, Any],
+    submitted_request: str,
 ) -> None:
-    """Display the selected reporting context."""
-
-    period_text = filters["period"].strftime(
-        "%B %Y"
-    )
-
-    columns = st.columns(4)
-
-    columns[0].metric(
-        label="Branch",
-        value="Chennai",
-    )
-
-    columns[1].metric(
-        label="Period",
-        value=period_text,
-    )
-
-    columns[2].metric(
-        label="Analysis",
-        value=filters["analysis_type"],
-    )
-
-    columns[3].metric(
-        label="Comparison",
-        value=filters["comparison"],
-    )
-
-
-def get_dashboard() -> dict[str, Any] | None:
-    """Return the current dashboard response."""
-
-    response = st.session_state.finance_response
+    """Store the API response and manage clarification state."""
 
     if not isinstance(response, dict):
-        return None
+        _record_ui_error(
+            title="Invalid API response",
+            message=(
+                "The Finance API response must be a dictionary."
+            ),
+        )
+        return
 
-    dashboard = response.get(
-        "dashboard"
+    clarification_required = bool(
+        response.get(
+            "clarification_required",
+            False,
+        )
     )
 
-    if isinstance(dashboard, dict):
-        return dashboard
+    answer = str(
+        response.get(
+            "answer",
+            "",
+        )
+    ).strip()
 
-    return None
+    if not answer:
+        answer = (
+            "The Finance API completed the request but "
+            "did not return a response message."
+        )
 
-
-def render_empty_state() -> None:
-    """Display instructions before the first analysis."""
-
-    st.info(
-        "Select the period and analysis options in the sidebar, "
-        "then click **Run Analysis**."
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": answer,
+        }
     )
 
-
-def render_dashboard_metadata(
-    dashboard: dict[str, Any],
-) -> None:
-    """Render dashboard report metadata."""
-
-    metadata = dashboard.get(
-        "report_metadata",
+    intent = response.get(
+        "intent",
         {},
     )
 
-    if not isinstance(metadata, dict):
+    if not isinstance(intent, dict):
+        intent = {}
+
+    if clarification_required:
+        original_request = intent.get(
+            "original_request"
+        )
+
+        pending_request = (
+            str(original_request).strip()
+            if original_request
+            else submitted_request
+        )
+
+        st.session_state.pending_request = pending_request
+        st.session_state.pending_intent = intent
+
+        # Clarification responses must not display dashboard cards.
+        st.session_state.latest_response = None
         return
 
-    title = metadata.get(
-        "title"
+    st.session_state.pending_request = None
+    st.session_state.pending_intent = {}
+    st.session_state.latest_response = response
+
+
+def _record_ui_error(
+    *,
+    title: str,
+    message: str,
+) -> None:
+    """Save a recoverable UI error in the conversation."""
+
+    st.session_state.request_in_progress = False
+
+    error_text = (
+        f"**{title}**\n\n{message}"
     )
 
-    if title:
-        st.subheader(str(title))
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": error_text,
+        }
+    )
 
-    metadata_values = []
+    st.session_state.latest_response = None
+    st.rerun()
+
+
+def _clear_conversation() -> None:
+    """Clear temporary conversation and dashboard state."""
+
+    st.session_state.messages = []
+    st.session_state.pending_request = None
+    st.session_state.pending_intent = {}
+    st.session_state.latest_response = None
+    st.session_state.request_in_progress = False
+
+    st.rerun()
+
+
+def _render_response_metadata(
+    response: dict[str, Any],
+) -> None:
+    """Render execution and workflow metadata."""
+
+    if response.get(
+        "clarification_required",
+        False,
+    ):
+        return
+
+    selected_flow = response.get(
+        "selected_flow",
+        "unknown",
+    )
+
+    execution_status = response.get(
+        "execution_status",
+        "unknown",
+    )
+
+    used_fallback = bool(
+        response.get(
+            "used_fallback",
+            False,
+        )
+    )
+
+    columns = st.columns(3)
+
+    columns[0].metric(
+        "Analysis",
+        _humanize(
+            selected_flow
+        ),
+    )
+
+    columns[1].metric(
+        "Execution Status",
+        _humanize(
+            execution_status
+        ),
+    )
+
+    columns[2].metric(
+        "AI Response",
+        (
+            "Fallback"
+            if used_fallback
+            else "Grounded"
+        ),
+    )
+
+    if st.session_state.show_intent_details:
+        intent = response.get(
+            "intent",
+            {},
+        )
+
+        if isinstance(intent, dict) and intent:
+            with st.expander(
+                "Interpreted finance request",
+                expanded=False,
+            ):
+                _render_intent(
+                    intent
+                )
+
+
+def _render_intent(
+    intent: dict[str, Any],
+) -> None:
+    """Render structured intent information."""
+
+    period = intent.get(
+        "period",
+        {},
+    )
+
+    if not isinstance(period, dict):
+        period = {}
+
+    requested_kpis = intent.get(
+        "requested_kpis",
+        [],
+    )
+
+    if not isinstance(requested_kpis, list):
+        requested_kpis = []
+
+    details = {
+        "Selected flow": _humanize(
+            intent.get(
+                "selected_flow",
+                "unknown",
+            )
+        ),
+        "Comparison": _humanize(
+            intent.get(
+                "comparison",
+                "none",
+            )
+        ),
+        "Period": (
+            period.get(
+                "display_value"
+            )
+            or "Not provided"
+        ),
+        "Category": (
+            intent.get(
+                "category"
+            )
+            or "All Categories"
+        ),
+        "Scenario": (
+            intent.get(
+                "scenario_name"
+            )
+            or "Not applicable"
+        ),
+        "Requested KPIs": (
+            ", ".join(
+                _humanize(item)
+                for item in requested_kpis
+            )
+            or "Not specifically requested"
+        ),
+    }
+
+    for label, value in details.items():
+        st.markdown(
+            f"**{label}:** {value}"
+        )
+
+
+def _render_dashboard(
+    dashboard: dict[str, Any],
+) -> None:
+    """Render the complete management dashboard."""
+
+    st.divider()
+    st.header("FP&A Management Dashboard")
+
+    _render_report_metadata(
+        dashboard.get(
+            "report_metadata",
+            {},
+        )
+    )
+
+    _render_executive_summary(
+        dashboard.get(
+            "executive_summary"
+        )
+    )
+
+    _render_kpi_cards(
+        dashboard.get(
+            "kpi_cards",
+            [],
+        )
+    )
+
+    _render_charts(
+        trend_data=dashboard.get(
+            "trend_data",
+            [],
+        ),
+        waterfall_data=dashboard.get(
+            "waterfall_data",
+            [],
+        ),
+    )
+
+    _render_tables(
+        dashboard
+    )
+
+    _render_management_sections(
+        recommendations=dashboard.get(
+            "recommendations",
+            [],
+        ),
+        risks=dashboard.get(
+            "risks",
+            [],
+        ),
+    )
+
+    _render_commentary(
+        dashboard.get(
+            "commentary",
+            {},
+        )
+    )
+
+    _render_data_limitations(
+        dashboard.get(
+            "data_limitations",
+            [],
+        )
+    )
+
+
+def _render_report_metadata(
+    metadata: Any,
+) -> None:
+    """Render dashboard reporting metadata."""
+
+    if not isinstance(metadata, dict) or not metadata:
+        return
+
+    period = (
+        metadata.get("period")
+        or metadata.get("reporting_period")
+        or metadata.get("period_label")
+    )
+
+    comparison = metadata.get(
+        "comparison"
+    )
+
+    category = metadata.get(
+        "category"
+    )
 
     generated_at = metadata.get(
         "generated_at"
     )
 
-    overall_status = metadata.get(
-        "overall_status"
-    )
+    metadata_items: list[str] = []
+
+    if period:
+        metadata_items.append(
+            f"**Period:** {period}"
+        )
+
+    if comparison:
+        metadata_items.append(
+            f"**Comparison:** {_humanize(comparison)}"
+        )
+
+    if category:
+        metadata_items.append(
+            f"**Category:** {category}"
+        )
 
     if generated_at:
-        metadata_values.append(
-            f"Generated: {generated_at}"
+        metadata_items.append(
+            f"**Generated:** {generated_at}"
         )
 
-    if overall_status:
-        metadata_values.append(
-            f"Status: {overall_status}"
-        )
-
-    if metadata_values:
+    if metadata_items:
         st.caption(
-            " | ".join(metadata_values)
+            "  |  ".join(
+                metadata_items
+            )
         )
 
 
-def render_kpi_cards(
-    dashboard: dict[str, Any],
+def _render_executive_summary(
+    executive_summary: Any,
 ) -> None:
-    """Render dashboard KPI cards."""
+    """Render the management executive summary."""
 
-    cards = dashboard.get(
-        "kpi_cards",
-        [],
-    )
-
-    if not isinstance(cards, list) or not cards:
-        st.info(
-            "No KPI card data is available "
-            "for this analysis."
-        )
+    if not isinstance(
+        executive_summary,
+        str,
+    ):
         return
 
-    st.subheader("KPI Performance")
+    summary = executive_summary.strip()
 
-    maximum_cards_per_row = 5
+    if not summary:
+        return
+
+    st.subheader("Executive Summary")
+    st.info(summary)
+
+
+def _render_kpi_cards(
+    kpi_cards: Any,
+) -> None:
+    """Render responsive KPI cards."""
+
+    if not isinstance(
+        kpi_cards,
+        list,
+    ) or not kpi_cards:
+        return
+
+    st.subheader("Key Performance Indicators")
 
     for start_index in range(
         0,
-        len(cards),
-        maximum_cards_per_row,
+        len(kpi_cards),
+        4,
     ):
-        card_group = cards[
+        card_group = kpi_cards[
             start_index:
-            start_index + maximum_cards_per_row
+            start_index + 4
         ]
 
         columns = st.columns(
@@ -520,129 +953,306 @@ def render_kpi_cards(
         for column, card in zip(
             columns,
             card_group,
+            strict=False,
         ):
-            if not isinstance(card, dict):
+            if not isinstance(
+                card,
+                dict,
+            ):
                 continue
 
-            label = str(
-                card.get(
-                    "label",
-                    "KPI",
-                )
-            )
-
-            value = (
-                card.get("formatted_value")
-                or card.get("value")
-                or "N/A"
-            )
-
-            delta = format_card_delta(
-                card
+            label = (
+                card.get("label")
+                or card.get("title")
+                or card.get("name")
+                or card.get("metric")
+                or "KPI"
             )
 
             column.metric(
-                label=label,
-                value=value,
-                delta=delta,
+                label=str(label),
+                value=_resolve_display_value(
+                    card
+                ),
+                delta=_resolve_delta(
+                    card
+                ),
+                delta_color=_resolve_delta_color(
+                    card
+                ),
             )
 
 
-def format_card_delta(
+def _resolve_display_value(
+    card: dict[str, Any],
+) -> str:
+    """Resolve the display value for a KPI card."""
+
+    for field_name in (
+        "display_value",
+        "formatted_value",
+        "value",
+    ):
+        value = card.get(
+            field_name
+        )
+
+        if value is not None:
+            return str(value)
+
+    return "N/A"
+
+
+def _resolve_delta(
     card: dict[str, Any],
 ) -> str | None:
-    """Create a readable KPI comparison delta."""
+    """Resolve a KPI card delta value."""
 
-    delta = card.get(
-        "delta"
-    )
+    for field_name in (
+        "delta",
+        "display_delta",
+        "variance_display",
+        "variance",
+        "change",
+    ):
+        value = card.get(
+            field_name
+        )
 
-    delta_percentage = card.get(
-        "delta_percentage"
-    )
+        if (
+            value is not None
+            and str(value).strip()
+        ):
+            return str(value)
 
-    if delta is None:
-        return None
+    return None
 
-    unit = str(
+
+def _resolve_delta_color(
+    card: dict[str, Any],
+) -> str:
+    """Resolve Streamlit metric delta direction."""
+
+    status = str(
         card.get(
-            "unit",
+            "status",
             "",
         )
-    ).lower()
+    ).strip().lower()
 
-    if unit in {
-        "currency",
-        "inr",
-        "rupees",
-    }:
-        delta_text = f"₹{float(delta):,.2f}"
-    elif unit in {
-        "percentage",
-        "percent",
-        "%",
-    }:
-        delta_text = f"{float(delta):,.2f}%"
-    else:
-        delta_text = f"{float(delta):,.2f}"
-
-    if delta_percentage is not None:
-        delta_text += (
-            f" ({float(delta_percentage):,.2f}%)"
+    direction = str(
+        card.get(
+            "direction",
+            "",
         )
+    ).strip().lower()
 
-    comparison_label = card.get(
-        "comparison_label"
-    )
+    if status in {
+        "unfavourable",
+        "unfavorable",
+        "negative",
+        "warning",
+        "fail",
+    }:
+        return "inverse"
 
-    if comparison_label:
-        delta_text += (
-            f" vs {comparison_label}"
-        )
+    if direction in {
+        "lower_is_better",
+        "inverse",
+    }:
+        return "inverse"
 
-    return delta_text
+    if status in {
+        "neutral",
+        "no_change",
+    }:
+        return "off"
+
+    return "normal"
 
 
-def render_executive_summary(
-    dashboard: dict[str, Any],
+def _render_charts(
+    *,
+    trend_data: Any,
+    waterfall_data: Any,
 ) -> None:
-    """Render the management executive summary."""
+    """Render trend and variance bridge charts."""
 
-    summary = dashboard.get(
-        "executive_summary"
+    has_trend = (
+        isinstance(trend_data, list)
+        and bool(trend_data)
     )
 
-    if not summary:
-        commentary = dashboard.get(
-            "commentary",
-            {},
-        )
+    has_waterfall = (
+        isinstance(waterfall_data, list)
+        and bool(waterfall_data)
+    )
 
-        if isinstance(commentary, dict):
-            summary = commentary.get(
-                "executive_summary"
-            )
-
-    if not summary:
+    if not has_trend and not has_waterfall:
         return
 
-    st.subheader("Executive Summary")
-    st.markdown(str(summary))
+    st.subheader("Performance Visuals")
+
+    if has_trend and has_waterfall:
+        trend_column, bridge_column = st.columns(2)
+
+        with trend_column:
+            _render_trend_chart(
+                trend_data
+            )
+
+        with bridge_column:
+            _render_waterfall_chart(
+                waterfall_data
+            )
+
+    elif has_trend:
+        _render_trend_chart(
+            trend_data
+        )
+
+    else:
+        _render_waterfall_chart(
+            waterfall_data
+        )
 
 
-def render_finance_tables(
+def _render_trend_chart(
+    trend_data: list[Any],
+) -> None:
+    """Render available time-series data."""
+
+    dataframe = _records_to_dataframe(
+        trend_data
+    )
+
+    if dataframe.empty:
+        return
+
+    st.markdown(
+        "**Trend Analysis**"
+    )
+
+    label_column = _find_first_column(
+        dataframe,
+        (
+            "period",
+            "date",
+            "month",
+            "label",
+            "category",
+        ),
+    )
+
+    numeric_columns = list(
+        dataframe.select_dtypes(
+            include="number"
+        ).columns
+    )
+
+    if not numeric_columns:
+        st.dataframe(
+            dataframe,
+            use_container_width=True,
+            hide_index=True,
+        )
+        return
+
+    chart_dataframe = dataframe.copy()
+
+    if label_column:
+        chart_dataframe = (
+            chart_dataframe.set_index(
+                label_column
+            )
+        )
+
+    st.line_chart(
+        chart_dataframe[
+            numeric_columns
+        ],
+        use_container_width=True,
+    )
+
+
+def _render_waterfall_chart(
+    waterfall_data: list[Any],
+) -> None:
+    """Render variance bridge data using a native bar chart."""
+
+    dataframe = _records_to_dataframe(
+        waterfall_data
+    )
+
+    if dataframe.empty:
+        return
+
+    st.markdown(
+        "**Variance Bridge**"
+    )
+
+    label_column = _find_first_column(
+        dataframe,
+        (
+            "label",
+            "driver",
+            "effect",
+            "category",
+            "name",
+        ),
+    )
+
+    value_column = _find_first_column(
+        dataframe,
+        (
+            "value",
+            "amount",
+            "variance",
+            "effect_value",
+        ),
+    )
+
+    if (
+        label_column is None
+        or value_column is None
+    ):
+        st.dataframe(
+            dataframe,
+            use_container_width=True,
+            hide_index=True,
+        )
+        return
+
+    chart_dataframe = dataframe[
+        [
+            label_column,
+            value_column,
+        ]
+    ].copy()
+
+    chart_dataframe = chart_dataframe.set_index(
+        label_column
+    )
+
+    st.bar_chart(
+        chart_dataframe,
+        use_container_width=True,
+    )
+
+
+def _render_tables(
     dashboard: dict[str, Any],
 ) -> None:
-    """Render available structured finance tables."""
+    """Render available dashboard tables."""
 
     table_definitions = (
         (
             "kpi_table",
-            "KPI Summary",
+            "KPI Detail",
         ),
         (
             "variance_table",
-            "Actual vs Budget Variance",
+            "Variance Analysis",
         ),
         (
             "category_table",
@@ -650,355 +1260,324 @@ def render_finance_tables(
         ),
     )
 
-    for field_name, default_title in table_definitions:
-        table = dashboard.get(
-            field_name
+    available_tables = [
+        (
+            field_name,
+            title,
+            dashboard.get(
+                field_name
+            ),
+        )
+        for field_name, title in table_definitions
+        if _table_has_data(
+            dashboard.get(
+                field_name
+            )
+        )
+    ]
+
+    if not available_tables:
+        return
+
+    st.subheader("Detailed Analysis")
+
+    tabs = st.tabs(
+        [
+            title
+            for _, title, _ in available_tables
+        ]
+    )
+
+    for tab, (
+        _,
+        _,
+        table_payload,
+    ) in zip(
+        tabs,
+        available_tables,
+        strict=False,
+    ):
+        with tab:
+            _render_table_payload(
+                table_payload
+            )
+
+
+def _table_has_data(
+    table_payload: Any,
+) -> bool:
+    """Return whether a dashboard table contains records."""
+
+    if not isinstance(
+        table_payload,
+        dict,
+    ):
+        return False
+
+    rows = (
+        table_payload.get("rows")
+        or table_payload.get("data")
+        or table_payload.get("records")
+        or []
+    )
+
+    return (
+        isinstance(rows, list)
+        and bool(rows)
+    )
+
+
+def _render_table_payload(
+    table_payload: Any,
+) -> None:
+    """Render one structured dashboard table."""
+
+    if not isinstance(
+        table_payload,
+        dict,
+    ):
+        return
+
+    title = table_payload.get(
+        "title"
+    )
+
+    if title:
+        st.markdown(
+            f"**{title}**"
         )
 
-        if not isinstance(table, dict):
-            continue
+    rows = (
+        table_payload.get("rows")
+        or table_payload.get("data")
+        or table_payload.get("records")
+        or []
+    )
 
-        rows = table.get(
-            "rows",
-            [],
+    if not isinstance(rows, list):
+        st.warning(
+            "The API returned an invalid table structure."
         )
+        return
 
-        if not isinstance(rows, list) or not rows:
-            continue
+    dataframe = _records_to_dataframe(
+        rows
+    )
 
-        title = table.get(
-            "title",
-            default_title,
+    if dataframe.empty:
+        st.caption(
+            "No table records are available."
         )
+        return
 
-        st.subheader(
-            str(title)
-        )
+    columns = table_payload.get(
+        "columns"
+    )
 
-        dataframe = pd.DataFrame(
-            rows
-        )
+    if isinstance(columns, list) and columns:
+        valid_columns = [
+            column
+            for column in columns
+            if column in dataframe.columns
+        ]
 
-        declared_columns = table.get(
-            "columns",
-            [],
-        )
-
-        if isinstance(
-            declared_columns,
-            list,
-        ):
-            available_columns = [
-                column
-                for column in declared_columns
-                if column in dataframe.columns
+        if valid_columns:
+            dataframe = dataframe[
+                valid_columns
             ]
 
-            if available_columns:
-                dataframe = dataframe[
-                    available_columns
-                ]
-
-        st.dataframe(
-            dataframe,
-            use_container_width=True,
-            hide_index=True,
-        )
+    st.dataframe(
+        dataframe,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
-def render_recommendations_and_risks(
-    dashboard: dict[str, Any],
+def _render_management_sections(
+    *,
+    recommendations: Any,
+    risks: Any,
 ) -> None:
     """Render management recommendations and risks."""
 
-    recommendations = dashboard.get(
-        "recommendations",
-        [],
+    has_recommendations = (
+        isinstance(recommendations, list)
+        and bool(recommendations)
     )
 
-    risks = dashboard.get(
-        "risks",
-        [],
+    has_risks = (
+        isinstance(risks, list)
+        and bool(risks)
     )
 
-    left_column, right_column = st.columns(2)
-
-    with left_column:
-        st.subheader("Recommendations")
-
-        if not recommendations:
-            st.info(
-                "No recommendations were returned."
-            )
-        else:
-            for recommendation in recommendations:
-                render_recommendation(
-                    recommendation
-                )
-
-    with right_column:
-        st.subheader("Risks")
-
-        if not risks:
-            st.info(
-                "No material risks were returned."
-            )
-        else:
-            for risk in risks:
-                render_risk(
-                    risk
-                )
-
-
-def render_recommendation(
-    recommendation: Any,
-) -> None:
-    """Render one management recommendation."""
-
-    if not isinstance(
-        recommendation,
-        dict,
-    ):
-        st.markdown(
-            f"- {recommendation}"
-        )
+    if not has_recommendations and not has_risks:
         return
 
-    priority = recommendation.get(
-        "priority"
-    )
-    title = recommendation.get(
-        "title",
-        "Management Recommendation",
-    )
-    action = recommendation.get(
-        "action",
-        "",
-    )
+    st.subheader("Management Review")
 
-    heading = str(title)
+    recommendation_column, risk_column = st.columns(2)
 
-    if priority:
-        heading = (
-            f"[{priority}] {heading}"
-        )
-
-    with st.container(border=True):
+    with recommendation_column:
         st.markdown(
-            f"**{heading}**"
+            "#### Recommendations"
         )
-        st.write(action)
 
-        additional_details = []
+        if has_recommendations:
+            _render_item_list(
+                recommendations
+            )
+        else:
+            st.caption(
+                "No recommendations were generated."
+            )
 
-        owner = recommendation.get(
+    with risk_column:
+        st.markdown(
+            "#### Risks and Exceptions"
+        )
+
+        if has_risks:
+            _render_item_list(
+                risks
+            )
+        else:
+            st.caption(
+                "No material risks were identified."
+            )
+
+
+def _render_item_list(
+    items: list[Any],
+) -> None:
+    """Render management items."""
+
+    for item in items:
+        if isinstance(item, str):
+            st.markdown(
+                f"- {item}"
+            )
+            continue
+
+        if not isinstance(item, dict):
+            st.markdown(
+                f"- {item}"
+            )
+            continue
+
+        title = (
+            item.get("title")
+            or item.get("action")
+            or item.get("risk")
+            or item.get("description")
+            or item.get("message")
+            or "Item"
+        )
+
+        priority = (
+            item.get("priority")
+            or item.get("severity")
+        )
+
+        owner = item.get(
             "owner"
         )
 
-        time_horizon = recommendation.get(
-            "time_horizon"
-        )
+        prefix_parts: list[str] = []
 
-        expected_impact = recommendation.get(
-            "expected_impact"
-        )
+        if priority:
+            prefix_parts.append(
+                str(priority).upper()
+            )
 
         if owner:
-            additional_details.append(
-                f"Owner: {owner}"
+            prefix_parts.append(
+                str(owner)
             )
 
-        if time_horizon:
-            additional_details.append(
-                f"Timeline: {time_horizon}"
-            )
-
-        if expected_impact:
-            additional_details.append(
-                f"Impact: {expected_impact}"
-            )
-
-        if additional_details:
-            st.caption(
-                " | ".join(
-                    additional_details
-                )
-            )
-
-
-def render_risk(
-    risk: Any,
-) -> None:
-    """Render one dashboard risk."""
-
-    if not isinstance(
-        risk,
-        dict,
-    ):
-        st.warning(str(risk))
-        return
-
-    severity = risk.get(
-        "severity"
-    )
-    title = risk.get(
-        "title",
-        "Financial or Operational Risk",
-    )
-    description = risk.get(
-        "description",
-        "",
-    )
-
-    heading = str(title)
-
-    if severity:
-        heading = (
-            f"[{severity}] {heading}"
+        prefix = (
+            f"[{' | '.join(prefix_parts)}] "
+            if prefix_parts
+            else ""
         )
 
-    with st.container(border=True):
         st.markdown(
-            f"**{heading}**"
-        )
-        st.write(description)
-
-        metric = risk.get(
-            "metric"
+            f"- {prefix}{title}"
         )
 
-        value = risk.get(
-            "value"
-        )
 
-        if metric:
-            st.caption(
-                f"Metric: {metric}"
-                + (
-                    f" | Value: {value}"
-                    if value is not None
-                    else ""
-                )
-            )
-
-
-def render_commentary(
-    dashboard: dict[str, Any],
+def _render_commentary(
+    commentary: Any,
 ) -> None:
-    """Render structured finance commentary."""
-
-    commentary = dashboard.get(
-        "commentary",
-        {},
-    )
+    """Render management commentary."""
 
     if not isinstance(
         commentary,
         dict,
-    ):
-        return
-
-    commentary_sections = (
-        (
-            "financial_performance",
-            "Financial Performance",
-        ),
-        (
-            "kpi_commentary",
-            "KPI Commentary",
-        ),
-        (
-            "variance_commentary",
-            "Variance Commentary",
-        ),
-        (
-            "forecast_commentary",
-            "Forecast Commentary",
-        ),
-        (
-            "scenario_commentary",
-            "Scenario Commentary",
-        ),
-    )
-
-    populated_sections = [
-        (
-            key,
-            title,
-            commentary.get(key),
-        )
-        for key, title in commentary_sections
-        if commentary.get(key)
-    ]
-
-    management_attention = commentary.get(
-        "management_attention",
-        [],
-    )
-
-    if (
-        not populated_sections
-        and not management_attention
-    ):
+    ) or not commentary:
         return
 
     st.subheader("Management Commentary")
 
-    for _, title, value in populated_sections:
+    commentary_text = (
+        commentary.get("text")
+        or commentary.get("summary")
+        or commentary.get(
+            "executive_commentary"
+        )
+        or commentary.get(
+            "management_commentary"
+        )
+    )
+
+    if commentary_text:
+        st.markdown(
+            str(commentary_text)
+        )
+
+    remaining_sections = {
+        key: value
+        for key, value in commentary.items()
+        if key
+        not in {
+            "text",
+            "summary",
+            "executive_commentary",
+            "management_commentary",
+        }
+        and value not in (
+            None,
+            "",
+            [],
+            {},
+        )
+    }
+
+    if remaining_sections:
         with st.expander(
-            title,
+            "Additional commentary",
             expanded=False,
         ):
-            st.markdown(str(value))
-
-    if isinstance(
-        management_attention,
-        list,
-    ) and management_attention:
-        with st.expander(
-            "Management Attention",
-            expanded=True,
-        ):
-            for item in management_attention:
+            for title, value in remaining_sections.items():
                 st.markdown(
-                    f"- {item}"
+                    f"**{_humanize(title)}**"
                 )
 
-
-def render_ai_answer() -> None:
-    """Render the complete AI-generated management answer."""
-
-    response = st.session_state.finance_response
-
-    if not isinstance(
-        response,
-        dict,
-    ):
-        return
-
-    answer = response.get(
-        "answer"
-    )
-
-    if not answer:
-        return
-
-    with st.expander(
-        "Full AI Management Report",
-        expanded=False,
-    ):
-        st.markdown(str(answer))
+                if isinstance(value, list):
+                    _render_item_list(
+                        value
+                    )
+                elif isinstance(value, dict):
+                    st.json(value)
+                else:
+                    st.markdown(
+                        str(value)
+                    )
 
 
-def render_data_limitations(
-    dashboard: dict[str, Any],
+def _render_data_limitations(
+    limitations: Any,
 ) -> None:
-    """Render transparent data limitations."""
-
-    limitations = dashboard.get(
-        "data_limitations",
-        [],
-    )
+    """Render disclosed data limitations."""
 
     if not isinstance(
         limitations,
@@ -1007,296 +1586,189 @@ def render_data_limitations(
         return
 
     with st.expander(
-        "Data Availability and Limitations",
+        "Data limitations",
         expanded=False,
     ):
-        for limitation in limitations:
-            st.markdown(
-                f"- {limitation}"
-            )
+        _render_item_list(
+            limitations
+        )
 
 
-def render_sources() -> None:
-    """Display source references returned by FastAPI."""
+def _render_ai_answer(
+    response: dict[str, Any],
+) -> None:
+    """Render the grounded AI finance response."""
 
-    response = st.session_state.finance_response
-
-    if not isinstance(
-        response,
-        dict,
-    ):
-        return
-
-    sources = response.get(
-        "sources",
-        [],
+    answer = response.get(
+        "answer"
     )
 
+    if not isinstance(answer, str):
+        return
+
+    cleaned_answer = answer.strip()
+
+    if not cleaned_answer:
+        return
+
+    st.subheader("AI Finance Analysis")
+    st.markdown(cleaned_answer)
+
+
+def _render_sources(
+    sources: Any,
+) -> None:
+    """Render RAG reference sources."""
+
+    if not isinstance(
+        sources,
+        list,
+    ) or not sources:
+        return
+
     with st.expander(
-        "Supporting Sources",
+        f"Sources ({len(sources)})",
         expanded=False,
     ):
-        if not sources:
-            st.info(
-                "No supporting sources were returned."
-            )
-            return
-
-        for position, source in enumerate(
+        for source_index, source in enumerate(
             sources,
             start=1,
         ):
-            render_source(
+            if not isinstance(
                 source,
-                position,
+                dict,
+            ):
+                continue
+
+            metadata = source.get(
+                "metadata",
+                {},
             )
 
+            if not isinstance(
+                metadata,
+                dict,
+            ):
+                metadata = {}
 
-def render_source(
-    source: Any,
-    position: int,
-) -> None:
-    """Display one source record."""
-
-    if not isinstance(
-        source,
-        dict,
-    ):
-        st.markdown(
-            f"**Source {position}:** {source}"
-        )
-        return
-
-    title = resolve_source_title(
-        source,
-        position,
-    )
-
-    st.markdown(
-        f"**{title}**"
-    )
-
-    excerpt = source.get(
-        "excerpt"
-    )
-
-    if excerpt:
-        st.write(excerpt)
-
-    score = source.get(
-        "score"
-    )
-
-    rank = source.get(
-        "rank"
-    )
-
-    details = []
-
-    if rank is not None:
-        details.append(
-            f"Rank: {rank}"
-        )
-
-    if score is not None:
-        details.append(
-            f"Score: {float(score):.4f}"
-        )
-
-    if details:
-        st.caption(
-            " | ".join(details)
-        )
-
-
-def resolve_source_title(
-    source: dict[str, Any],
-    position: int,
-) -> str:
-    """Resolve a readable source title."""
-
-    metadata = source.get(
-        "metadata",
-        {},
-    )
-
-    candidate_sources = [
-        source,
-        metadata
-        if isinstance(metadata, dict)
-        else {},
-    ]
-
-    candidate_fields = (
-        "document_id",
-        "source",
-        "file_name",
-        "filename",
-        "title",
-        "id",
-    )
-
-    for candidate in candidate_sources:
-        for field_name in candidate_fields:
-            value = candidate.get(
-                field_name
+            source_name = (
+                metadata.get("filename")
+                or metadata.get("source")
+                or metadata.get("title")
+                or source.get("id")
+                or f"Source {source_index}"
             )
 
-            if value:
-                return (
-                    f"Source {position}: {value}"
+            score = source.get(
+                "score"
+            )
+
+            rank = source.get(
+                "rank",
+                source_index,
+            )
+
+            excerpt = str(
+                source.get(
+                    "excerpt",
+                    "",
+                )
+            ).strip()
+
+            heading = (
+                f"**{rank}. {source_name}**"
+            )
+
+            if isinstance(
+                score,
+                (int, float),
+            ):
+                heading += (
+                    f" — relevance {score:.3f}"
                 )
 
-    return f"Source {position}"
-
-
-def render_custom_question() -> None:
-    """Render an optional natural-language finance question form."""
-
-    with st.expander(
-        "Ask Finance AI",
-        expanded=False,
-    ):
-        with st.form(
-            key="custom_finance_question_form",
-            clear_on_submit=False,
-        ):
-            question = st.text_area(
-                label="Finance Question",
-                placeholder=(
-                    "Example: Why was revenue below budget "
-                    "for the selected month?"
-                ),
-                height=100,
+            st.markdown(
+                heading
             )
 
-            submitted = st.form_submit_button(
-                label="Ask Finance AI",
-                type="primary",
-                use_container_width=True,
-            )
+            if excerpt:
+                st.caption(
+                    excerpt
+                )
 
-        if submitted:
-            process_custom_question(
-                question
-            )
+            if source_index < len(
+                sources
+            ):
+                st.divider()
 
 
-def process_custom_question(
-    question: str,
-) -> None:
-    """Submit a natural-language finance question."""
+def _records_to_dataframe(
+    records: list[Any],
+) -> pd.DataFrame:
+    """Convert API records into a safe pandas dataframe."""
 
-    normalized_question = question.strip()
+    valid_records = [
+        record
+        for record in records
+        if isinstance(record, dict)
+    ]
 
-    if not normalized_question:
-        st.warning(
-            "Enter a finance question."
+    if not valid_records:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        valid_records
+    )
+
+
+def _find_first_column(
+    dataframe: pd.DataFrame,
+    candidates: tuple[str, ...],
+) -> str | None:
+    """Find the first candidate column in a dataframe."""
+
+    normalized_mapping = {
+        str(column).strip().lower(): str(
+            column
         )
-        return
+        for column in dataframe.columns
+    }
 
-    try:
-        with st.spinner(
-            "Analysing your finance question..."
-        ):
-            response = ask_finance_question(
-                question=normalized_question,
-                top_k=DEFAULT_TOP_K,
-                metadata_filter={},
-            )
-
-    except (
-        ValueError,
-        FinanceApiConnectionError,
-        FinanceApiResponseError,
-    ) as exc:
-        st.error(str(exc))
-        return
-
-    except Exception as exc:
-        st.error(
-            "An unexpected error occurred."
-        )
-        st.caption(str(exc))
-        return
-
-    st.session_state.finance_response = response
-    st.session_state.finance_error = None
-
-
-def render_dashboard(
-    filters: dict[str, Any],
-) -> None:
-    """Render the complete structured dashboard."""
-
-    render_report_context(
-        filters
-    )
-
-    dashboard = get_dashboard()
-
-    if dashboard is None:
-        render_empty_state()
-        return
-
-    render_dashboard_metadata(
-        dashboard
-    )
-
-    render_kpi_cards(
-        dashboard
-    )
-
-    st.divider()
-
-    render_executive_summary(
-        dashboard
-    )
-
-    render_finance_tables(
-        dashboard
-    )
-
-    render_recommendations_and_risks(
-        dashboard
-    )
-
-    render_commentary(
-        dashboard
-    )
-
-    render_ai_answer()
-
-    render_data_limitations(
-        dashboard
-    )
-
-    render_sources()
-
-
-def main() -> None:
-    """Run the Streamlit dashboard."""
-
-    configure_page()
-    initialize_session_state()
-    render_header()
-
-    filters = render_sidebar()
-
-    if filters["action"]:
-        process_dashboard_request(
-            filters
+    for candidate in candidates:
+        matched_column = normalized_mapping.get(
+            candidate.lower()
         )
 
-    render_error()
+        if matched_column:
+            return matched_column
 
-    render_dashboard(
-        filters
+    return None
+
+
+def _humanize(
+    value: Any,
+) -> str:
+    """Convert identifiers into user-friendly labels."""
+
+    cleaned_value = str(
+        value
+    ).strip()
+
+    if not cleaned_value:
+        return "Unknown"
+
+    return (
+        cleaned_value
+        .replace(
+            "_",
+            " ",
+        )
+        .replace(
+            "-",
+            " ",
+        )
+        .title()
     )
-
-    st.divider()
-
-    render_custom_question()
 
 
 if __name__ == "__main__":
