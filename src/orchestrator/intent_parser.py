@@ -18,6 +18,13 @@ becomes:
 The parser also supports temporary slot filling. If required information is
 missing, it returns a clarification question instead of guessing.
 
+Reporting-period behaviour:
+
+- A reporting period is optional.
+- When no period is supplied, all available data may be analyzed.
+- When the user supplies an invalid date or reversed range, clarification
+  is required.
+
 This module must not:
 
 - Execute finance agents
@@ -286,6 +293,10 @@ def parse_finance_intent(
         normalized_request
     )
 
+    period_was_requested = _contains_period_expression(
+        normalized_request
+    )
+
     period = _extract_period(
         normalized_request,
         reference_date=effective_reference_date,
@@ -316,6 +327,7 @@ def parse_finance_intent(
             selected_flow=selected_flow,
             comparison=comparison,
             period=period,
+            period_was_requested=period_was_requested,
         )
     )
 
@@ -424,11 +436,20 @@ def merge_finance_intent(
         )
     )
 
+    combined_normalized_request = _normalize_text(
+        combined_request
+    )
+
+    period_was_requested = _contains_period_expression(
+        combined_normalized_request
+    )
+
     missing_fields = tuple(
         _identify_missing_fields(
             selected_flow=selected_flow,
             comparison=comparison,
             period=period,
+            period_was_requested=period_was_requested,
         )
     )
 
@@ -520,6 +541,92 @@ def _extract_comparison(
         return "actual_vs_budget"
 
     return "none"
+
+
+def _contains_period_expression(
+    normalized_request: str,
+) -> bool:
+    """
+    Check whether the user attempted to provide a reporting period.
+
+    This distinguishes between:
+
+    - No period supplied:
+      "Show KPI"
+
+    - Invalid period supplied:
+      "Show KPI for 31 February 2026"
+
+    A missing period is allowed. An invalid supplied period requires
+    clarification.
+    """
+
+    relative_patterns = (
+        r"\btoday\b",
+        r"\byesterday\b",
+        r"\bthis month\b",
+        r"\blast month\b",
+        r"\bthis year\b",
+    )
+
+    if any(
+        re.search(pattern, normalized_request)
+        for pattern in relative_patterns
+    ):
+        return True
+
+    if re.search(
+        r"\bfrom\b.+\bto\b",
+        normalized_request,
+    ):
+        return True
+
+    if re.search(
+        r"\bbetween\b.+\band\b",
+        normalized_request,
+    ):
+        return True
+
+    if re.search(
+        r"\b20\d{2}-\d{1,2}-\d{1,2}\b",
+        normalized_request,
+    ):
+        return True
+
+    if re.search(
+        r"\b\d{1,2}[./-]\d{1,2}[./-]20\d{2}\b",
+        normalized_request,
+    ):
+        return True
+
+    month_pattern = "|".join(
+        sorted(
+            MONTH_NAMES,
+            key=len,
+            reverse=True,
+        )
+    )
+
+    if re.search(
+        rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+"
+        rf"(?:{month_pattern})\s+20\d{{2}}\b",
+        normalized_request,
+    ):
+        return True
+
+    if re.search(
+        rf"\b(?:{month_pattern})\s+20\d{{2}}\b",
+        normalized_request,
+    ):
+        return True
+
+    if re.search(
+        r"\b20\d{2}\b",
+        normalized_request,
+    ):
+        return True
+
+    return False
 
 
 def _extract_period(
@@ -1106,8 +1213,18 @@ def _identify_missing_fields(
     selected_flow: FlowType,
     comparison: ComparisonType,
     period: ParsedPeriod,
+    period_was_requested: bool,
 ) -> list[str]:
-    """Identify information required before execution."""
+    """
+    Identify information required before execution.
+
+    Rules:
+
+    - Unknown workflow requires the analysis type.
+    - Variance analysis requires a comparison.
+    - Reporting period is optional.
+    - An invalid explicitly supplied period requires clarification.
+    """
 
     missing_fields: list[str] = []
 
@@ -1115,25 +1232,7 @@ def _identify_missing_fields(
         missing_fields.append(
             "analysis_type"
         )
-
         return missing_fields
-
-    period_required_flows: set[FlowType] = {
-        "kpi",
-        "budget",
-        "forecast",
-        "variance",
-        "scenario",
-        "full",
-    }
-
-    if (
-        selected_flow in period_required_flows
-        and not period.start_date
-    ):
-        missing_fields.append(
-            "period"
-        )
 
     if (
         selected_flow == "variance"
@@ -1141,6 +1240,17 @@ def _identify_missing_fields(
     ):
         missing_fields.append(
             "comparison"
+        )
+
+    if (
+        period_was_requested
+        and (
+            period.start_date is None
+            or period.end_date is None
+        )
+    ):
+        missing_fields.append(
+            "period"
         )
 
     return missing_fields
@@ -1160,16 +1270,16 @@ def _build_clarification_question(
     ):
         return (
             "What analysis would you like to run: KPI, budget, "
-            "forecast, variance, scenario or management report?"
+            "forecast, variance, scenario, P&L or management report?"
         )
 
     if missing_fields == (
         "period",
     ):
         return (
-            "Which reporting period would you like to analyze? "
-            "For example: January 2026, 20 October 2026, or "
-            "1 January 2026 to 31 March 2026."
+            "The reporting period appears invalid. Please provide a "
+            "valid period, such as January 2026, 20 October 2026, "
+            "or 1 January 2026 to 31 March 2026."
         )
 
     if missing_fields == (
@@ -1185,7 +1295,7 @@ def _build_clarification_question(
         and "comparison" in missing_fields
     ):
         return (
-            "Which reporting period and comparison would you like? "
+            "Please provide a valid reporting period and comparison. "
             "For example: January 2026, Actual vs Budget."
         )
 

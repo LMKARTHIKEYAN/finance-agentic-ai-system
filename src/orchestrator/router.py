@@ -111,12 +111,47 @@ def identify_flow(user_request: str) -> FlowType:
     )
 
     kpi_keywords = (
-        "kpi",
-        "key performance indicator",
-        "performance metric",
-        "performance metrics",
-        "business performance",
-        "show performance",
+    "kpi",
+    "key performance indicator",
+    "performance metric",
+    "performance metrics",
+    "business performance",
+    "show performance",
+
+    # Revenue
+    "revenue",
+    "sales",
+    "income",
+
+    # Orders
+    "order",
+    "orders",
+
+    # Profit
+    "profit",
+    "gross profit",
+    "net profit",
+    "margin",
+    "gp",
+
+    # Cost
+    "cost",
+    "expense",
+    "expenses",
+
+    # KPIs
+    "aov",
+    "average order value",
+    "fulfillment",
+    "fulfilment",
+    "completion rate",
+    "cancellation",
+
+    # Generic
+    "show total",
+    "total revenue",
+    "total orders",
+
     )
 
     # More specific and broader workflows must be checked first.

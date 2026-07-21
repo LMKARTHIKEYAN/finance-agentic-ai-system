@@ -284,6 +284,7 @@ def test_get_supported_flows_returns_all_approved_flows() -> None:
         "forecast",
         "variance",
         "scenario",
+        "pnl",
         "full",
     )
 

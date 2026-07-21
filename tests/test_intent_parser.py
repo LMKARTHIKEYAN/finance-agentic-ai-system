@@ -463,8 +463,8 @@ def test_parse_scenario_name(
     assert result.scenario_name == expected_scenario
 
 
-def test_missing_period_returns_clarification() -> None:
-    """A finance request without a period should ask for one."""
+def test_missing_period_uses_all_available_data() -> None:
+    """A finance request without a period should use all available data."""
 
     result = parse_finance_intent(
         "Show Actual vs Budget"
@@ -472,14 +472,16 @@ def test_missing_period_returns_clarification() -> None:
 
     assert result.selected_flow == "variance"
     assert result.comparison == "actual_vs_budget"
-    assert result.is_complete is False
-    assert result.missing_fields == (
-        "period",
-    )
-    assert result.clarification_question is not None
-    assert "Which reporting period" in (
-        result.clarification_question
-    )
+
+    assert result.period.start_date is None
+    assert result.period.end_date is None
+    assert result.period.display_value is None
+    assert result.period.granularity == "unknown"
+
+    assert result.is_complete is True
+    assert result.missing_fields == ()
+    assert result.clarification_question is None
+ 
 
 
 def test_unknown_request_returns_analysis_clarification() -> None:

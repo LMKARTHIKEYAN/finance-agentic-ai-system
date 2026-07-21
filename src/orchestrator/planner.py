@@ -33,6 +33,7 @@ SUPPORTED_PLANNING_FLOWS: tuple[FlowType, ...] = (
     "forecast",
     "variance",
     "scenario",
+    "pnl",
     "full",
 )
 
@@ -280,6 +281,15 @@ STEP_CATALOG: Mapping[str, PlanStep] = MappingProxyType(
             required_inputs=("operations_result", "budget_result"),
             output_field="variance_result",
         ),
+        "pnl": PlanStep(
+            name="pnl",
+            purpose="Generate the Profit and Loss statement.",
+            required_inputs=(
+                "cleaned_operations_data",
+                "cleaned_budget_data",
+            ),
+            output_field="pnl_result",
+        ),
         "finance_rules": PlanStep(
             name="finance_rules",
             purpose="Apply deterministic finance controls and validation rules.",
@@ -385,6 +395,14 @@ FLOW_STEP_NAMES: Mapping[FlowType, tuple[str, ...]] = MappingProxyType(
             "commentary",
             "complete",
         ),
+        "pnl": (
+            "validate_operations",
+            "validate_budget",
+            "clean_operations",
+            "clean_budget",
+            "pnl",
+            "complete",
+        ),
         "full": (
             "validate_operations",
             "validate_budget",
@@ -438,6 +456,11 @@ FLOW_REQUIRED_STATE_FIELDS: Mapping[FlowType, tuple[str, ...]] = (
                 "business_assumptions",
                 "scenario_name",
             ),
+            "pnl": (
+                "user_request",
+                "operations_data",
+                "budget_data",
+            ),
             "full": (
                 "user_request",
                 "operations_data",
@@ -465,6 +488,10 @@ FLOW_DESCRIPTIONS: Mapping[FlowType, str] = MappingProxyType(
         "scenario": (
             "Create a forecast, apply business assumptions, and evaluate a "
             "management scenario."
+        ),
+        "pnl": (
+            "Generate a Profit and Loss statement from operational and "
+            "budget data."
         ),
         "full": (
             "Run the complete end-to-end FP&A management-analysis workflow."
