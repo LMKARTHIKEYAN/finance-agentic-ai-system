@@ -14,6 +14,8 @@ RECONCILIATION_TOLERANCE: Final[float] = 0.0001
 
 @dataclass(slots=True)
 class CategoryUnitEconomics:
+    category: str
+    product: str
     month: str
     vehicle_category: str
     actual_volume: float
@@ -32,6 +34,10 @@ class CategoryUnitEconomics:
     budget_gross_profit: float
     budget_gp_percentage: float
     budget_mix_percentage: float
+    price_effect_percentage_points: float
+    cost_effect_percentage_points: float
+    check_percentage_points: float
+    mix_indicator: int
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -39,9 +45,17 @@ class CategoryUnitEconomics:
 
 @dataclass(slots=True)
 class GrossProfitVarianceResult:
+    base_revenue: float
+    base_gross_profit: float
     budget_gp_percentage: float
+    mix_only_revenue: float
+    mix_only_gross_profit: float
     mix_only_gp_percentage: float
+    price_only_revenue: float
+    price_only_gross_profit: float
     price_only_gp_percentage: float
+    actual_revenue: float
+    actual_gross_profit: float
     actual_gp_percentage: float
     mix_effect_percentage_points: float
     price_effect_percentage_points: float
@@ -131,9 +145,17 @@ class GrossProfitVarianceAgent:
         difference = mix_effect + price_effect + cost_effect - total_effect
 
         return GrossProfitVarianceResult(
+            base_revenue=round(float(budget_revenue), 2),
+            base_gross_profit=round(float(budget_gp), 2),
             budget_gp_percentage=round(budget_pct * 100, 4),
+            mix_only_revenue=round(float(mix_revenue), 2),
+            mix_only_gross_profit=round(float(mix_gp), 2),
             mix_only_gp_percentage=round(mix_pct * 100, 4),
+            price_only_revenue=round(float(price_revenue), 2),
+            price_only_gross_profit=round(float(price_gp), 2),
             price_only_gp_percentage=round(price_pct * 100, 4),
+            actual_revenue=round(float(actual_revenue), 2),
+            actual_gross_profit=round(float(actual_gp), 2),
             actual_gp_percentage=round(actual_pct * 100, 4),
             mix_effect_percentage_points=round(mix_effect * 100, 4),
             price_effect_percentage_points=round(price_effect * 100, 4),
@@ -201,11 +223,66 @@ class GrossProfitVarianceAgent:
     def _category_rows(self, data: pd.DataFrame) -> list[CategoryUnitEconomics]:
         actual_total = float(data["actual_revenue"].sum())
         budget_total = float(data["budget_revenue"].sum())
+        portfolio_budget_gp_percentage = self._ratio(
+            float(
+                (
+                    data["budget_revenue"]
+                    - data["budget_direct_cost"]
+                ).sum()
+            ),
+            budget_total,
+        )
         rows: list[CategoryUnitEconomics] = []
         for row in data.itertuples(index=False):
             actual_gp = row.actual_revenue - row.actual_direct_cost
             budget_gp = row.budget_revenue - row.budget_direct_cost
+            actual_gp_percentage = self._ratio(
+                actual_gp,
+                row.actual_revenue,
+            )
+            budget_gp_percentage = self._ratio(
+                budget_gp,
+                row.budget_revenue,
+            )
+            price_only_gp_percentage = self._ratio(
+                row.actual_price_per_unit - row.budget_cost_per_unit,
+                row.actual_price_per_unit,
+            )
+            price_effect = (
+                price_only_gp_percentage - budget_gp_percentage
+            )
+            cost_effect = (
+                actual_gp_percentage
+                - budget_gp_percentage
+                - price_effect
+            )
+            check = (
+                actual_gp_percentage
+                - budget_gp_percentage
+                - price_effect
+                - cost_effect
+            )
+            actual_mix = self._ratio(row.actual_revenue, actual_total)
+            budget_mix = self._ratio(row.budget_revenue, budget_total)
+            mix_indicator = (
+                1
+                if (
+                    (
+                        budget_gp_percentage
+                        > portfolio_budget_gp_percentage
+                        and actual_mix > budget_mix
+                    )
+                    or (
+                        budget_gp_percentage
+                        < portfolio_budget_gp_percentage
+                        and actual_mix < budget_mix
+                    )
+                )
+                else -1
+            )
             rows.append(CategoryUnitEconomics(
+                category="Vehicle",
+                product=str(row.vehicle_category),
                 month=row.month,
                 vehicle_category=row.vehicle_category,
                 actual_volume=float(row.actual_volume),
@@ -214,16 +291,20 @@ class GrossProfitVarianceAgent:
                 actual_revenue=round(float(row.actual_revenue), 2),
                 actual_direct_cost=round(float(row.actual_direct_cost), 2),
                 actual_gross_profit=round(float(actual_gp), 2),
-                actual_gp_percentage=round(self._ratio(actual_gp, row.actual_revenue) * 100, 4),
-                actual_mix_percentage=round(self._ratio(row.actual_revenue, actual_total) * 100, 4),
+                actual_gp_percentage=round(actual_gp_percentage * 100, 4),
+                actual_mix_percentage=round(actual_mix * 100, 4),
                 budget_volume=float(row.budget_volume),
                 budget_price_per_unit=round(float(row.budget_price_per_unit), 4),
                 budget_cost_per_unit=round(float(row.budget_cost_per_unit), 4),
                 budget_revenue=round(float(row.budget_revenue), 2),
                 budget_direct_cost=round(float(row.budget_direct_cost), 2),
                 budget_gross_profit=round(float(budget_gp), 2),
-                budget_gp_percentage=round(self._ratio(budget_gp, row.budget_revenue) * 100, 4),
-                budget_mix_percentage=round(self._ratio(row.budget_revenue, budget_total) * 100, 4),
+                budget_gp_percentage=round(budget_gp_percentage * 100, 4),
+                budget_mix_percentage=round(budget_mix * 100, 4),
+                price_effect_percentage_points=round(price_effect * 100, 4),
+                cost_effect_percentage_points=round(cost_effect * 100, 4),
+                check_percentage_points=round(check * 100, 8),
+                mix_indicator=mix_indicator,
             ))
         return rows
 

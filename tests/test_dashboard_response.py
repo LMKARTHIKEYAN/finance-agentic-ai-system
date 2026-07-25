@@ -379,7 +379,9 @@ def test_build_dashboard_response_creates_gp_variance_bridge() -> None:
     )
 
     assert result.category_table is not None
-    assert result.category_table.title == "GP% Decomposition by Category"
+    assert result.category_table.title == "Product Level Analysis"
+    assert result.variance_table is not None
+    assert result.variance_table.title == "Portfolio Level Analysis"
     assert [point.label for point in result.waterfall_data] == [
         "Budget GP%",
         "Mix Effect",

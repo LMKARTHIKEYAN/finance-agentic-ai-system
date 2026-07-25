@@ -136,6 +136,10 @@ def build_dashboard_response(
     variance_table = _build_variance_table(
         variance_result
     )
+    if gp_variance_result:
+        variance_table = _build_gp_variance_portfolio_table(
+            gp_variance_result
+        )
 
     category_table = _build_category_table(
         operations_result=operations_result,
@@ -666,17 +670,140 @@ def _build_gp_variance_category_table(
 ) -> DashboardTable | None:
     """Create category-level unit economics for GP% decomposition."""
 
+    source_rows = _get_list(result, "category_analysis")
     rows = [
-        row
-        for row in _get_list(result, "category_analysis")
+        {
+            "Category": row.get("category"),
+            "Product": row.get("product"),
+            "Month": row.get("month"),
+            "Volume Actual": row.get("actual_volume"),
+            "Actual Price per Unit": row.get("actual_price_per_unit"),
+            "Actual COGS per Unit": row.get("actual_cost_per_unit"),
+            "Actual Revenue": row.get("actual_revenue"),
+            "Actual COGS": row.get("actual_direct_cost"),
+            "Actual Profit": row.get("actual_gross_profit"),
+            "Actual GP%": row.get("actual_gp_percentage"),
+            "Volume Base": row.get("budget_volume"),
+            "Base Price per Unit": row.get("budget_price_per_unit"),
+            "Base COGS per Unit": row.get("budget_cost_per_unit"),
+            "Base Revenue": row.get("budget_revenue"),
+            "Base COGS": row.get("budget_direct_cost"),
+            "Base Profit": row.get("budget_gross_profit"),
+            "Base GP%": row.get("budget_gp_percentage"),
+            "Price Effect (pp)": row.get(
+                "price_effect_percentage_points"
+            ),
+            "Cost Effect (pp)": row.get(
+                "cost_effect_percentage_points"
+            ),
+            "Check (pp)": row.get("check_percentage_points"),
+            "Mix Indicator": row.get("mix_indicator"),
+            "Mix Actual": row.get("actual_mix_percentage"),
+            "Mix Base": row.get("budget_mix_percentage"),
+        }
+        for row in source_rows
         if isinstance(row, dict)
     ]
     if not rows:
         return None
 
     return DashboardTable(
-        title="GP% Decomposition by Category",
+        title="Product Level Analysis",
         columns=_collect_columns(rows),
+        rows=rows,
+    )
+
+
+def _build_gp_variance_portfolio_table(
+    result: dict[str, Any],
+) -> DashboardTable:
+    """Create the workbook-style portfolio GP% calculation block."""
+
+    rows = [
+        {
+            "Metric": "Base Revenue",
+            "Formula": "Σ (Base price × Base volume)",
+            "Value": result.get("base_revenue"),
+        },
+        {
+            "Metric": "Base GP$",
+            "Formula": "Σ (Base volume × (Base price - Base cost))",
+            "Value": result.get("base_gross_profit"),
+        },
+        {
+            "Metric": "Base GP%",
+            "Formula": "Base GP$ ÷ Base Revenue",
+            "Value": result.get("budget_gp_percentage"),
+        },
+        {
+            "Metric": "Mix-only Revenue",
+            "Formula": "Σ (Base price × Actual volume)",
+            "Value": result.get("mix_only_revenue"),
+        },
+        {
+            "Metric": "Mix-only GP$",
+            "Formula": "Σ (Actual volume × (Base price - Base cost))",
+            "Value": result.get("mix_only_gross_profit"),
+        },
+        {
+            "Metric": "Mix-only GP%",
+            "Formula": "Mix-only GP$ ÷ Mix-only Revenue",
+            "Value": result.get("mix_only_gp_percentage"),
+        },
+        {
+            "Metric": "Price-only Revenue",
+            "Formula": "Σ (Actual price × Actual volume)",
+            "Value": result.get("price_only_revenue"),
+        },
+        {
+            "Metric": "Price-only GP$ (A price, B cost)",
+            "Formula": "Σ (Actual volume × (Actual price - Base cost))",
+            "Value": result.get("price_only_gross_profit"),
+        },
+        {
+            "Metric": "Price-only GP%",
+            "Formula": "Price-only GP$ ÷ Price-only Revenue",
+            "Value": result.get("price_only_gp_percentage"),
+        },
+        {
+            "Metric": "Actual Revenue",
+            "Formula": "Σ (Actual price × Actual volume)",
+            "Value": result.get("actual_revenue"),
+        },
+        {
+            "Metric": "Actual GP$",
+            "Formula": "Σ (Actual volume × (Actual price - Actual cost))",
+            "Value": result.get("actual_gross_profit"),
+        },
+        {
+            "Metric": "Actual GP%",
+            "Formula": "Actual GP$ ÷ Actual Revenue",
+            "Value": result.get("actual_gp_percentage"),
+        },
+        {
+            "Metric": "Mix Effect (pp)",
+            "Formula": "Mix-only GP% - Base GP%",
+            "Value": result.get("mix_effect_percentage_points"),
+        },
+        {
+            "Metric": "Price Effect (pp)",
+            "Formula": "Price-only GP% - Mix-only GP%",
+            "Value": result.get("price_effect_percentage_points"),
+        },
+        {
+            "Metric": "Cost Effect (pp)",
+            "Formula": "Actual GP% - Price-only GP%",
+            "Value": result.get("cost_effect_percentage_points"),
+        },
+        {
+            "Metric": "Total Δ GP% (pp)",
+            "Formula": "Mix Effect + Price Effect + Cost Effect",
+            "Value": result.get("total_variance_percentage_points"),
+        },
+    ]
+    return DashboardTable(
+        title="Portfolio Level Analysis",
+        columns=["Metric", "Formula", "Value"],
         rows=rows,
     )
 
