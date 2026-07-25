@@ -34,6 +34,7 @@ import pandas as pd
 LOGGER: Final[logging.Logger] = logging.getLogger(__name__)
 
 COMPLETED_ORDER_STATUS: Final[str] = "completed"
+INCOME_TAX_RATE: Final[float] = 0.25
 
 
 @dataclass(slots=True)
@@ -101,6 +102,10 @@ class PnlAgent:
 
         EBT = EBIT - Interest
 
+        Income Tax = max(EBT, 0) * 25%
+
+        Net Profit = EBT - Income Tax
+
     Budget P&L formulas:
 
         Budget Revenue = Sum of budget_revenue
@@ -123,13 +128,17 @@ class PnlAgent:
 
         Budget EBT =
             Budget EBIT - Budget Interest
+
+        Budget Income Tax = max(Budget EBT, 0) * 25%
+
+        Budget Net Profit = Budget EBT - Budget Income Tax
     """
 
     ACTUAL_ORDER_REQUIRED_COLUMNS: Final[frozenset[str]] = frozenset(
         {
             "order_date",
             "order_status",
-            "fare",
+            "commission_amount",
             "partner_payout",
             "incentive",
             "goodwill",
@@ -167,7 +176,6 @@ class PnlAgent:
     )
 
     ACTUAL_DIRECT_COST_COLUMNS: Final[tuple[str, ...]] = (
-        "partner_payout",
         "incentive",
         "goodwill",
         "dry_run",
@@ -175,8 +183,7 @@ class PnlAgent:
     )
 
     ACTUAL_ORDER_NUMERIC_COLUMNS: Final[tuple[str, ...]] = (
-        "fare",
-        "partner_payout",
+        "commission_amount",
         "incentive",
         "goodwill",
         "dry_run",
@@ -208,6 +215,8 @@ class PnlAgent:
         "ebit",
         "interest",
         "ebt",
+        "income_tax",
+        "net_profit",
     )
 
     PNL_METRICS: Final[tuple[str, ...]] = (
@@ -222,6 +231,8 @@ class PnlAgent:
         "ebit",
         "interest",
         "ebt",
+        "income_tax",
+        "net_profit",
     )
 
     def analyze(
@@ -817,7 +828,7 @@ class PnlAgent:
         return (
             orders.groupby("month", as_index=False)
             .agg(
-                revenue=("fare", "sum"),
+                revenue=("commission_amount", "sum"),
                 direct_cost=("direct_cost", "sum"),
             )
             .sort_values(by="month")
@@ -871,7 +882,15 @@ class PnlAgent:
 
         pnl["ebt"] = (
             pnl["ebit"] - pnl["interest"]
-        )
+        ).round(2)
+
+        pnl["income_tax"] = (
+            pnl["ebt"].clip(lower=0) * INCOME_TAX_RATE
+        ).round(2)
+
+        pnl["net_profit"] = (
+            pnl["ebt"] - pnl["income_tax"]
+        ).round(2)
 
         pnl = pnl.loc[:, self.PNL_COLUMNS].copy()
 
@@ -1027,6 +1046,10 @@ class PnlAgent:
             data["interest"].sum()
         )
 
+        income_tax = float(
+            data["income_tax"].sum()
+        )
+
         ebitda = (
             gross_profit
             - sales_marketing
@@ -1034,7 +1057,8 @@ class PnlAgent:
         )
 
         ebit = ebitda - depreciation
-        ebt = ebit - interest
+        ebt = float(data["ebt"].sum())
+        net_profit = float(data["net_profit"].sum())
 
         gross_margin_percentage = (
             gross_profit / revenue * 100
@@ -1060,6 +1084,8 @@ class PnlAgent:
             "ebit": round(ebit, 2),
             "interest": round(interest, 2),
             "ebt": round(ebt, 2),
+            "income_tax": round(income_tax, 2),
+            "net_profit": round(net_profit, 2),
         }
     def _validate_calculated_pnl(
         self,
@@ -1126,11 +1152,23 @@ class PnlAgent:
             - data["interest"]
         ).round(2)
 
+        expected_income_tax = (
+            data["ebt"].clip(lower=0)
+            * INCOME_TAX_RATE
+        ).round(2)
+
+        expected_net_profit = (
+            data["ebt"]
+            - data["income_tax"]
+        ).round(2)
+
         formula_checks = {
             "gross_profit": expected_gross_profit,
             "ebitda": expected_ebitda,
             "ebit": expected_ebit,
             "ebt": expected_ebt,
+            "income_tax": expected_income_tax,
+            "net_profit": expected_net_profit,
         }
 
         formula_tolerance = 0.010001

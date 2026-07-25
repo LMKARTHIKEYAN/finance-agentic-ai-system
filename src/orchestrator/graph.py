@@ -31,6 +31,7 @@ from src.orchestrator.nodes import (
     error_node,
     finance_rules_node,
     forecast_node,
+    gp_variance_node,
     kpi_node,
     operations_analysis_node,
     pnl_node,
@@ -56,6 +57,7 @@ SUPPORTED_FLOWS = (
     "forecast",
     "variance",
     "scenario",
+    "gp_variance",
     "pnl",
     "full",
 )
@@ -77,6 +79,7 @@ AGENT_RESULT_FIELDS: tuple[str, ...] = (
     "forecast_result",
     "scenario_result",
     "variance_result",
+    "gp_variance_result",
     "pnl_result",
     "finance_rules_result",
     "anomaly_result",
@@ -279,6 +282,7 @@ def select_initial_route(
     "forecast",
     "variance",
     "scenario",
+    "gp_variance",
     "pnl",
     "full",
     "error",
@@ -802,6 +806,19 @@ def build_finance_graph() -> Any:
         ],
     )
 
+    gp_variance_entry = _add_linear_route(
+        builder,
+        "gp_variance",
+        [
+            ("validate_operations", validate_operations_node),
+            ("validate_budget", validate_budget_node),
+            ("clean_operations", clean_operations_node),
+            ("clean_budget", clean_budget_node),
+            ("gp_variance", gp_variance_node),
+            ("complete", complete_node),
+        ],
+    )
+
     # ------------------------------------------------------------------
     # Full management-analysis route
     # ------------------------------------------------------------------
@@ -904,6 +921,7 @@ def build_finance_graph() -> Any:
             "forecast": forecast_entry,
             "variance": variance_entry,
             "scenario": scenario_entry,
+            "gp_variance": gp_variance_entry,
             "pnl": pnl_entry,
             "full": full_entry,
             "error": "error",

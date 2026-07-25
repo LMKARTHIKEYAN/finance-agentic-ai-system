@@ -117,6 +117,10 @@ def build_dashboard_response(
         finance_analysis,
         "kpi_result",
     )
+    gp_variance_result = _get_mapping(
+        finance_analysis,
+        "gp_variance_result",
+    )
 
     kpi_cards = _build_kpi_cards(
         operations_result=operations_result,
@@ -138,6 +142,10 @@ def build_dashboard_response(
         budget_result=budget_result,
         variance_result=variance_result,
     )
+    if gp_variance_result:
+        category_table = _build_gp_variance_category_table(
+            gp_variance_result
+        )
 
     trend_data = _build_trend_data(
         operations_result=operations_result,
@@ -149,6 +157,10 @@ def build_dashboard_response(
     waterfall_data = _build_waterfall_data(
         variance_result
     )
+    if gp_variance_result:
+        waterfall_data = _build_gp_variance_waterfall(
+            gp_variance_result
+        )
 
     recommendations = _build_recommendations(
         recommendation_result,
@@ -649,6 +661,26 @@ def _build_category_table(
     )
 
 
+def _build_gp_variance_category_table(
+    result: dict[str, Any],
+) -> DashboardTable | None:
+    """Create category-level unit economics for GP% decomposition."""
+
+    rows = [
+        row
+        for row in _get_list(result, "category_analysis")
+        if isinstance(row, dict)
+    ]
+    if not rows:
+        return None
+
+    return DashboardTable(
+        title="GP% Decomposition by Category",
+        columns=_collect_columns(rows),
+        rows=rows,
+    )
+
+
 def _build_trend_data(
     *,
     operations_result: dict[str, Any],
@@ -815,6 +847,60 @@ def _build_waterfall_data(
             measure,
             favourability,
         ) in enumerate(
+            components,
+            start=1,
+        )
+    ]
+
+
+def _build_gp_variance_waterfall(
+    result: dict[str, Any],
+) -> list[DashboardWaterfallPoint]:
+    """Create the Budget-to-Actual GP% bridge in percentage points."""
+
+    budget_gp = _as_number(result.get("budget_gp_percentage"))
+    actual_gp = _as_number(result.get("actual_gp_percentage"))
+    if budget_gp is None or actual_gp is None:
+        return []
+
+    components = (
+        ("Budget GP%", budget_gp, "absolute", "neutral"),
+        (
+            "Mix Effect",
+            _as_number(result.get("mix_effect_percentage_points")) or 0,
+            "relative",
+            None,
+        ),
+        (
+            "Price Effect",
+            _as_number(result.get("price_effect_percentage_points")) or 0,
+            "relative",
+            None,
+        ),
+        (
+            "Cost Effect",
+            _as_number(result.get("cost_effect_percentage_points")) or 0,
+            "relative",
+            None,
+        ),
+        ("Actual GP%", actual_gp, "total", "neutral"),
+    )
+    return [
+        DashboardWaterfallPoint(
+            label=label,
+            value=value,
+            measure=measure,
+            sequence=index,
+            favourability=(
+                favourability
+                or _get_favourability(
+                    value,
+                    favourable_when_positive=True,
+                )
+            ),
+            unit="percentage_points",
+        )
+        for index, (label, value, measure, favourability) in enumerate(
             components,
             start=1,
         )

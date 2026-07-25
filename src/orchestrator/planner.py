@@ -33,6 +33,7 @@ SUPPORTED_PLANNING_FLOWS: tuple[FlowType, ...] = (
     "forecast",
     "variance",
     "scenario",
+    "gp_variance",
     "pnl",
     "full",
 )
@@ -290,6 +291,12 @@ STEP_CATALOG: Mapping[str, PlanStep] = MappingProxyType(
             ),
             output_field="pnl_result",
         ),
+        "gp_variance": PlanStep(
+            name="gp_variance",
+            purpose="Decompose Gross Margin % variance into mix, price, and cost.",
+            required_inputs=("cleaned_operations_data", "cleaned_budget_data"),
+            output_field="gp_variance_result",
+        ),
         "finance_rules": PlanStep(
             name="finance_rules",
             purpose="Apply deterministic finance controls and validation rules.",
@@ -403,6 +410,14 @@ FLOW_STEP_NAMES: Mapping[FlowType, tuple[str, ...]] = MappingProxyType(
             "pnl",
             "complete",
         ),
+        "gp_variance": (
+            "validate_operations",
+            "validate_budget",
+            "clean_operations",
+            "clean_budget",
+            "gp_variance",
+            "complete",
+        ),
         "full": (
             "validate_operations",
             "validate_budget",
@@ -461,6 +476,11 @@ FLOW_REQUIRED_STATE_FIELDS: Mapping[FlowType, tuple[str, ...]] = (
                 "operations_data",
                 "budget_data",
             ),
+            "gp_variance": (
+                "user_request",
+                "operations_data",
+                "budget_data",
+            ),
             "full": (
                 "user_request",
                 "operations_data",
@@ -492,6 +512,10 @@ FLOW_DESCRIPTIONS: Mapping[FlowType, str] = MappingProxyType(
         "pnl": (
             "Generate a Profit and Loss statement from operational and "
             "budget data."
+        ),
+        "gp_variance": (
+            "Decompose Actual-versus-Budget Gross Margin % into mix, "
+            "price, and cost effects."
         ),
         "full": (
             "Run the complete end-to-end FP&A management-analysis workflow."

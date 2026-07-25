@@ -39,18 +39,18 @@ def sample_orders() -> pd.DataFrame:
 
     April completed-order totals:
 
-        Revenue:
-            1,000 + 500 = 1,500
+        Commission revenue:
+            400 + 200 = 600
 
         Direct cost:
             First order:
-                600 + 50 + 10 + 5 + 20 = 685
+                50 + 10 + 5 + 20 = 85
 
             Second order:
-                300 + 20 + 5 + 0 + 10 = 335
+                20 + 5 + 0 + 10 = 35
 
             Total direct cost:
-                685 + 335 = 1,020
+                85 + 35 = 120
 
     The cancelled order must not be included.
     """
@@ -79,6 +79,12 @@ def sample_orders() -> pd.DataFrame:
                 300.0,
                 1_200.0,
                 480.0,
+            ],
+            "commission_amount": [
+                400.0,
+                200.0,
+                800.0,
+                320.0,
             ],
             "incentive": [
                 50.0,
@@ -225,12 +231,12 @@ def test_create_actual_pnl_calculates_correct_values(
         result["month"] == "2026-04"
     ].iloc[0]
 
-    assert april["revenue"] == pytest.approx(1_500.0)
-    assert april["direct_cost"] == pytest.approx(1_020.0)
+    assert april["revenue"] == pytest.approx(600.0)
+    assert april["direct_cost"] == pytest.approx(120.0)
     assert april["gross_profit"] == pytest.approx(480.0)
 
     assert april["gross_margin_percentage"] == pytest.approx(
-        32.0
+        80.0
     )
 
     assert april["sales_marketing"] == pytest.approx(100.0)
@@ -241,6 +247,8 @@ def test_create_actual_pnl_calculates_correct_values(
     assert april["ebit"] == pytest.approx(310.0)
     assert april["interest"] == pytest.approx(10.0)
     assert april["ebt"] == pytest.approx(300.0)
+    assert april["income_tax"] == pytest.approx(75.0)
+    assert april["net_profit"] == pytest.approx(225.0)
 
 
 def test_create_actual_pnl_includes_only_completed_orders(
@@ -258,10 +266,10 @@ def test_create_actual_pnl_includes_only_completed_orders(
         result["month"] == "2026-04"
     ].iloc[0]
 
-    assert april["revenue"] == pytest.approx(1_500.0)
+    assert april["revenue"] == pytest.approx(600.0)
 
     assert april["revenue"] != pytest.approx(
-        3_500.0
+        1_400.0
     )
 
 
@@ -285,7 +293,7 @@ def test_create_actual_pnl_normalizes_order_status(
         result["month"] == "2026-04"
     ].iloc[0]
 
-    assert april["revenue"] == pytest.approx(1_500.0)
+    assert april["revenue"] == pytest.approx(600.0)
 
 
 def test_create_budget_pnl_aggregates_vehicle_categories(
@@ -319,6 +327,8 @@ def test_create_budget_pnl_aggregates_vehicle_categories(
     assert april["ebit"] == pytest.approx(450.0)
     assert april["interest"] == pytest.approx(10.0)
     assert april["ebt"] == pytest.approx(440.0)
+    assert april["income_tax"] == pytest.approx(110.0)
+    assert april["net_profit"] == pytest.approx(330.0)
 
 
 def test_create_budget_pnl_uses_budget_cogs_as_direct_cost(
@@ -371,15 +381,15 @@ def test_calculate_variance_returns_correct_values(
         result["month"] == "2026-04"
     ].iloc[0]
 
-    assert april["revenue_actual"] == pytest.approx(1_500.0)
+    assert april["revenue_actual"] == pytest.approx(600.0)
     assert april["revenue_budget"] == pytest.approx(1_600.0)
-    assert april["revenue_variance"] == pytest.approx(-100.0)
+    assert april["revenue_variance"] == pytest.approx(-1_000.0)
 
     assert april[
         "revenue_variance_percentage"
-    ] == pytest.approx(-6.25)
+    ] == pytest.approx(-62.5)
 
-    assert april["direct_cost_variance"] == pytest.approx(20.0)
+    assert april["direct_cost_variance"] == pytest.approx(-880.0)
 
     assert april["gross_profit_variance"] == pytest.approx(
         -120.0
@@ -387,6 +397,11 @@ def test_calculate_variance_returns_correct_values(
 
     assert april["ebitda_variance"] == pytest.approx(-140.0)
     assert april["ebt_variance"] == pytest.approx(-140.0)
+    assert april["income_tax_variance"] == pytest.approx(-35.0)
+    assert april["net_profit_variance"] == pytest.approx(-105.0)
+    assert april[
+        "net_profit_variance_percentage"
+    ] == pytest.approx(-31.82)
 
 
 def test_gross_margin_variance_is_percentage_point_variance(
@@ -418,7 +433,7 @@ def test_gross_margin_variance_is_percentage_point_variance(
 
     assert april[
         "gross_margin_percentage_actual"
-    ] == pytest.approx(32.0)
+    ] == pytest.approx(80.0)
 
     assert april[
         "gross_margin_percentage_budget"
@@ -426,7 +441,7 @@ def test_gross_margin_variance_is_percentage_point_variance(
 
     assert april[
         "gross_margin_percentage_point_variance"
-    ] == pytest.approx(-5.5)
+    ] == pytest.approx(42.5)
 
 
 def test_analyze_returns_complete_pnl_result(
@@ -482,16 +497,22 @@ def test_analyze_summary_calculates_period_totals(
     budget_summary = result.summary["budget"]
     variance_summary = result.summary["variance"]
 
-    assert actual_summary["revenue"] == pytest.approx(2_300.0)
+    assert actual_summary["revenue"] == pytest.approx(920.0)
     assert budget_summary["revenue"] == pytest.approx(2_450.0)
 
     assert variance_summary[
         "revenue_variance"
-    ] == pytest.approx(-150.0)
+    ] == pytest.approx(-1_530.0)
 
     assert variance_summary[
         "revenue_variance_percentage"
-    ] == pytest.approx(-6.12)
+    ] == pytest.approx(-62.45)
+    assert actual_summary["income_tax"] == pytest.approx(
+        actual_summary["ebt"] * 0.25
+    )
+    assert actual_summary["net_profit"] == pytest.approx(
+        actual_summary["ebt"] - actual_summary["income_tax"]
+    )
 
 
 def test_analyze_applies_month_filter(
@@ -574,6 +595,7 @@ def test_zero_actual_revenue_sets_gross_margin_to_zero(
             "order_status": ["completed"],
             "fare": [0.0],
             "partner_payout": [0.0],
+            "commission_amount": [0.0],
             "incentive": [0.0],
             "goodwill": [0.0],
             "dry_run": [0.0],
@@ -612,6 +634,8 @@ def test_zero_budget_returns_zero_variance_percentage(
             "ebit": [25.0],
             "interest": [5.0],
             "ebt": [20.0],
+            "income_tax": [5.0],
+            "net_profit": [15.0],
         }
     )
 
@@ -629,6 +653,8 @@ def test_zero_budget_returns_zero_variance_percentage(
             "ebit": [0.0],
             "interest": [0.0],
             "ebt": [0.0],
+            "income_tax": [0.0],
+            "net_profit": [0.0],
         }
     )
 
@@ -651,8 +677,8 @@ def test_zero_budget_returns_zero_variance_percentage(
 @pytest.mark.parametrize(
     ("missing_column", "dataset_name"),
     [
-        ("fare", "Orders"),
-        ("partner_payout", "Orders"),
+        ("commission_amount", "Orders"),
+        ("incentive", "Orders"),
         ("order_status", "Orders"),
     ],
 )
@@ -782,7 +808,7 @@ def test_actual_pnl_rejects_negative_financial_values(
 ) -> None:
     """Negative actual revenue and cost input values should be rejected."""
     invalid_orders = sample_orders.copy()
-    invalid_orders.loc[0, "fare"] = -1_000.0
+    invalid_orders.loc[0, "commission_amount"] = -1_000.0
 
     with pytest.raises(
         ValueError,
@@ -823,10 +849,12 @@ def test_actual_pnl_rejects_non_numeric_values(
     """Text inside financial columns should be rejected."""
     invalid_orders = sample_orders.copy()
 
-    invalid_orders["fare"] = invalid_orders["fare"].astype(
+    invalid_orders["commission_amount"] = invalid_orders[
+        "commission_amount"
+    ].astype(
         "object"
     )
-    invalid_orders.loc[0, "fare"] = "invalid"
+    invalid_orders.loc[0, "commission_amount"] = "invalid"
 
     with pytest.raises(
         ValueError,
@@ -1011,6 +1039,8 @@ def test_pnl_output_has_expected_columns(
         "ebit",
         "interest",
         "ebt",
+        "income_tax",
+        "net_profit",
     ]
 
 

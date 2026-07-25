@@ -42,6 +42,78 @@ def test_variance_flow_groups_primary_and_supporting_results() -> None:
     assert context["data_availability"]["has_supporting_analysis"] is True
 
 
+def test_pnl_flow_groups_pnl_results_as_primary_analysis() -> None:
+    """P&L flow should prioritize calculated P&L and its commentary."""
+
+    pnl_result = {
+        "reporting_period": "April 2026",
+        "revenue_actual": 1500,
+        "revenue_budget": 1600,
+    }
+    pnl_commentary_result = {
+        "executive_summary": "Revenue was below budget.",
+    }
+
+    context = build_finance_response_context(
+        selected_flow="pnl",
+        finance_analysis={
+            "pnl_result": pnl_result,
+            "pnl_commentary_result": pnl_commentary_result,
+        },
+    )
+
+    assert list(context["primary_analysis"]) == [
+        "pnl_result",
+        "pnl_commentary_result",
+    ]
+    assert context["primary_analysis"]["pnl_result"] == pnl_result
+    assert (
+        context["primary_analysis"]["pnl_commentary_result"]
+        == pnl_commentary_result
+    )
+
+
+def test_pnl_flow_preserves_relevant_supporting_analysis() -> None:
+    """P&L flow should retain related analytical evidence as supporting data."""
+
+    anomaly_result = {
+        "findings": ["Revenue variance detected"],
+    }
+
+    context = build_finance_response_context(
+        selected_flow="pnl",
+        finance_analysis={
+            "pnl_result": {"reporting_period": "April 2026"},
+            "anomaly_result": anomaly_result,
+        },
+    )
+
+    assert context["supporting_analysis"]["anomaly_result"] == anomaly_result
+    assert context["data_availability"]["has_supporting_analysis"] is True
+
+
+def test_pnl_flow_reports_missing_primary_results_as_unavailable() -> None:
+    """P&L flow should expose missing source data without inventing values."""
+
+    context = build_finance_response_context(
+        selected_flow="pnl",
+        finance_analysis={
+            "anomaly_result": {
+                "findings": ["Revenue variance detected"],
+            },
+        },
+    )
+
+    assert context["primary_analysis"] == {}
+    assert "pnl_result" in context["data_availability"]["unavailable_results"]
+    assert (
+        "pnl_commentary_result"
+        in context["data_availability"]["unavailable_results"]
+    )
+    assert context["data_availability"]["has_primary_analysis"] is False
+    assert "Do not invent" in context["response_instruction"]
+
+
 @pytest.mark.parametrize(
     ("selected_flow", "expected_primary_keys"),
     [

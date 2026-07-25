@@ -22,7 +22,7 @@ def identify_flow(user_request: str) -> FlowType:
     Returns:
         One of the supported workflow names:
         ``kpi``, ``budget``, ``forecast``, ``variance``, ``scenario``,
-        ``pnl``, ``full``, or ``unknown``.
+        ``gp_variance``, ``pnl``, ``full``, or ``unknown``.
     """
 
     normalized_request = user_request.strip().lower()
@@ -63,6 +63,20 @@ def identify_flow(user_request: str) -> FlowType:
         "p&l analysis",
         "gross profit statement",
         "operating profit statement",
+    )
+
+    gp_variance_keywords = (
+        "gp% variance",
+        "gp percentage variance",
+        "gross margin variance",
+        "gross profit percentage variance",
+        "margin decomposition",
+        "gp% decomposition",
+        "gp percentage decomposition",
+        "price mix cost bridge",
+        "mix price cost bridge",
+        "gp% bridge",
+        "gross margin bridge",
     )
 
     variance_keywords = (
@@ -160,6 +174,12 @@ def identify_flow(user_request: str) -> FlowType:
         for keyword in full_keywords
     ):
         return "full"
+
+    if any(
+        keyword in normalized_request
+        for keyword in gp_variance_keywords
+    ):
+        return "gp_variance"
 
     if any(
         keyword in normalized_request

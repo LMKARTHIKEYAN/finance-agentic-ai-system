@@ -114,6 +114,8 @@ class PromptType(str, Enum):
     VARIANCE_ANALYSIS = "variance_analysis"
     ROOT_CAUSE_ANALYSIS = "root_cause_analysis"
     SCENARIO_ANALYSIS = "scenario_analysis"
+    PNL_ANALYSIS = "pnl_analysis"
+    GP_VARIANCE_ANALYSIS = "gp_variance_analysis"
 
 
 @dataclass(frozen=True)
@@ -516,6 +518,263 @@ Data Limitations
 )
 
 
+PNL_ANALYSIS_TEMPLATE = PromptTemplate(
+    prompt_type=PromptType.PNL_ANALYSIS,
+    title="Profit and Loss Analysis",
+    instructions="""
+Present the supplied P&L agent results as a professional FP&A Profit and Loss
+statement for CFO, Finance Director, and management review.
+
+Use pnl_result as the primary source for all P&L amounts, margins, variance
+amounts, variance percentages, monthly results, consolidated results,
+available months, and excluded-month information.
+
+Use pnl_commentary_result only for management commentary and supported
+business interpretation.
+
+Do not recalculate, derive, estimate, reconcile, aggregate, or modify any P&L
+value. Use the values already calculated and supplied by the P&L Agent.
+
+P&L presentation rules:
+
+1. Present P&L line items in this order when the corresponding values are
+   supplied:
+
+   - Revenue
+   - Less: Direct Cost
+   - Gross Profit
+   - Gross Margin %
+   - Less: Sales & Marketing
+   - Less: Other OPEX
+   - EBITDA
+   - Less: Depreciation
+   - EBIT
+   - Less: Interest
+   - EBT
+   - Less: Income Tax
+   - Net Profit
+
+2. Use a Markdown table with these columns:
+
+   | Particulars | Actual | Budget | Variance | Variance % |
+
+3. Copy Actual, Budget, Variance, and Variance % values exactly from the
+   supplied P&L agent output.
+
+4. Do not calculate variance amount or variance percentage in the prompt
+   layer.
+
+5. For Gross Margin %, use the supplied:
+
+   - gross_margin_percentage_actual
+   - gross_margin_percentage_budget
+   - gross_margin_percentage_point_variance
+
+6. Display Gross Margin % variance as a percentage-point variance using the
+   suffix "pp".
+
+7. Do not display Gross Margin % variance as a normal monetary variance
+   percentage.
+
+8. When the supplied percentage-point variance is negative, preserve the
+   negative sign. When positive, preserve the positive value as supplied.
+
+9. For the Gross Margin % row:
+
+   - Actual column must show actual gross margin percentage.
+   - Budget column must show budget gross margin percentage.
+   - Variance column must show the supplied percentage-point variance with
+     "pp".
+   - Variance % column must show an em dash because a second percentage
+     variance is not applicable.
+
+10. Do not insert a currency symbol unless the supplied P&L result contains
+    that currency symbol or a preformatted display value.
+
+11. Do not convert values into lakhs, crores, thousands, millions, or
+    billions unless the supplied P&L result already contains those converted
+    values.
+
+12. For a period-specific request, such as "Generate P&L for April 2026",
+    present the P&L table for that requested period.
+
+13. For a general request such as "pnl", present:
+
+    - Consolidated Actual vs Budget P&L
+    - Monthly P&L for all available months
+    - Variance amount
+    - Variance percentage
+    - Actual Gross Margin %
+    - Budget Gross Margin %
+    - Gross Margin % variance in percentage points
+    - Management commentary after all tables
+
+14. When monthly P&L results are supplied, present one monthly comparison
+    table per month or one clearly structured monthly table that preserves all
+    supplied values.
+
+15. Do not omit available P&L lines only to shorten the response.
+
+16. If a P&L line is not present in the supplied analysis, do not invent it.
+    State the limitation only when the missing line is relevant to the user's
+    request.
+
+Variance interpretation rules:
+
+- For revenue and profit lines, a positive variance is normally favourable
+  and a negative variance is normally unfavourable.
+- For cost and expense lines, a negative variance is normally favourable and
+  a positive variance is normally unfavourable.
+- For Gross Margin %, a positive percentage-point variance is favourable and
+  a negative percentage-point variance is unfavourable.
+- Apply favourability according to the nature of the line item, not only the
+  mathematical sign.
+- Use supplied commentary and supporting evidence when available.
+- Do not invent a business cause for any variance.
+- Clearly separate factual variance results from supported interpretation.
+
+Commentary rules:
+
+- Place management commentary after the P&L tables.
+- Identify the most material favourable variances.
+- Identify the most material unfavourable variances.
+- Explain profitability and margin performance using only supplied evidence.
+- Include risks, exceptions, and management attention only when supported.
+- Avoid repeating every value already displayed in the tables.
+- Mention data limitations only when information is genuinely missing,
+  excluded, inconsistent, or unavailable.
+""".strip(),
+    output_format="""
+Return the response in the following order:
+
+# Profit and Loss Statement
+
+## Reporting Period
+
+State the requested period or consolidated period using the supplied analysis.
+
+## Actual vs Budget P&L
+
+Use this Markdown table structure:
+
+| Particulars | Actual | Budget | Variance | Variance % |
+|---|---:|---:|---:|---:|
+| Revenue | supplied value | supplied value | supplied value | supplied value |
+| Less: Direct Cost | supplied value | supplied value | supplied value | supplied value |
+| Gross Profit | supplied value | supplied value | supplied value | supplied value |
+| Gross Margin % | supplied value | supplied value | supplied pp variance | — |
+| Less: Sales & Marketing | supplied value | supplied value | supplied value | supplied value |
+| Less: Other OPEX | supplied value | supplied value | supplied value | supplied value |
+| EBITDA | supplied value | supplied value | supplied value | supplied value |
+| Less: Depreciation | supplied value | supplied value | supplied value | supplied value |
+| EBIT | supplied value | supplied value | supplied value | supplied value |
+| Less: Interest | supplied value | supplied value | supplied value | supplied value |
+| EBT | supplied value | supplied value | supplied value | supplied value |
+| Less: Income Tax | supplied value | supplied value | supplied value | supplied value |
+| Net Profit | supplied value | supplied value | supplied value | supplied value |
+
+Include only line items supported by the supplied analysis.
+
+For Gross Margin %:
+
+- Actual = supplied actual Gross Margin %
+- Budget = supplied budget Gross Margin %
+- Variance = supplied percentage-point variance followed by "pp"
+- Variance % = —
+
+## Monthly P&L
+
+Include this section when monthly P&L results are supplied or when the user
+requests a general consolidated P&L.
+
+Present all available months using the supplied monthly P&L results. Preserve
+the supplied month labels and values.
+
+## Management Commentary
+
+### Executive Summary
+
+Provide a concise summary of revenue, gross profit, Gross Margin %, EBITDA,
+EBIT, EBT, income tax, and Net Profit performance when supplied.
+
+### Material Favourable Variances
+
+List the most material favourable movements and explain why they are
+favourable based on the P&L line type.
+
+### Material Unfavourable Variances
+
+List the most material unfavourable movements and explain why they are
+unfavourable based on the P&L line type.
+
+### Margin and Profitability Assessment
+
+Explain actual Gross Margin %, budget Gross Margin %, and the supplied
+percentage-point variance. Do not calculate a new margin variance.
+
+### Risks, Exceptions, and Management Attention
+
+Include only supported risks, exceptions, and actions.
+
+## Data Limitations
+
+Include this section only when required data is genuinely unavailable,
+excluded, inconsistent, or missing.
+
+For any requested value that is unavailable, write:
+"Not available in the supplied analysis".
+
+Do not replace unavailable values with estimates.
+""".strip(),
+)
+
+GP_VARIANCE_ANALYSIS_TEMPLATE = PromptTemplate(
+    prompt_type=PromptType.GP_VARIANCE_ANALYSIS,
+    title="Gross Margin Percentage Variance Decomposition",
+    instructions="""
+Present the supplied gp_variance_result as an FP&A Gross Margin % bridge.
+Use only agent-calculated values. Do not recalculate or invent causes.
+Show Budget GP%, Mix-only GP%, Price-only GP%, Actual GP%, and the Mix,
+Price, and Cost effects in both percentage points and basis points.
+Classify positive effects as favourable and negative effects as
+unfavourable. Show the reconciliation difference and PASS/FAIL status.
+Report unmatched categories and data limitations. Explain mathematical
+drivers without claiming unsupported operational causes.
+""".strip(),
+    output_format="""
+# Gross Margin % Variance Decomposition
+
+## Reporting Period
+
+## GP% Bridge
+
+| Step | GP% | Effect (pp) |
+|---|---:|---:|
+| Budget GP% | supplied value | — |
+| Mix-only GP% | supplied value | supplied mix effect |
+| Price-only GP% | supplied value | supplied price effect |
+| Actual GP% | supplied value | supplied cost effect |
+
+## Driver Summary
+
+| Driver | Percentage Points | Basis Points | Classification |
+|---|---:|---:|---|
+| Mix | supplied value | supplied value | supplied interpretation |
+| Price | supplied value | supplied value | supplied interpretation |
+| Cost | supplied value | supplied value | supplied interpretation |
+| Total | supplied value | supplied value | supplied interpretation |
+
+## Category Unit Economics
+
+## Reconciliation Check
+
+## Management Commentary
+
+## Data Limitations
+""".strip(),
+)
+
+
 PROMPT_TEMPLATES: dict[PromptType, PromptTemplate] = {
     PromptType.FINANCE_QA: FINANCE_QA_TEMPLATE,
     PromptType.COMMENTARY: COMMENTARY_TEMPLATE,
@@ -526,6 +785,8 @@ PROMPT_TEMPLATES: dict[PromptType, PromptTemplate] = {
     PromptType.VARIANCE_ANALYSIS: VARIANCE_ANALYSIS_TEMPLATE,
     PromptType.ROOT_CAUSE_ANALYSIS: ROOT_CAUSE_TEMPLATE,
     PromptType.SCENARIO_ANALYSIS: SCENARIO_ANALYSIS_TEMPLATE,
+    PromptType.PNL_ANALYSIS: PNL_ANALYSIS_TEMPLATE,
+    PromptType.GP_VARIANCE_ANALYSIS: GP_VARIANCE_ANALYSIS_TEMPLATE,
 }
 
 
@@ -643,6 +904,24 @@ def build_recommendation_prompt(
 
     return build_prompt_messages(
         PromptType.RECOMMENDATION,
+        user_request=user_request,
+        finance_analysis=finance_analysis,
+        retrieved_context=retrieved_context,
+        additional_instructions=additional_instructions,
+    )
+
+
+def build_pnl_analysis_prompt(
+    *,
+    user_request: str,
+    finance_analysis: Any,
+    retrieved_context: str = "",
+    additional_instructions: str | None = None,
+) -> PromptMessages:
+    """Build a specialist Profit and Loss analysis prompt."""
+
+    return build_prompt_messages(
+        PromptType.PNL_ANALYSIS,
         user_request=user_request,
         finance_analysis=finance_analysis,
         retrieved_context=retrieved_context,

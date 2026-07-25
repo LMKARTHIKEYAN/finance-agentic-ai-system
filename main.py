@@ -49,7 +49,7 @@ from src.agents.finance.variance_agent import RevenueVarianceAgent
 from src.agents.reporting.commentary_agent import CommentaryAgent
 from src.agents.reporting.report_agent import ReportAgent
 from src.orchestrator.graph import run_finance_graph
-from src.orchestrator.router import identify_flow
+from src.orchestrator.intent_parser import parse_finance_intent
 from src.orchestrator.state import FinanceGraphState
 
 
@@ -619,6 +619,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--corporate-expenses",
+        default="data/operations/sample_corporate_expenses.csv",
+        help="Path to the actual corporate-expenses CSV file.",
+    )
+
+    parser.add_argument(
+        "--budget-corporate-expenses",
+        default=(
+            "data/planning/"
+            "sample_budget_corporate_expenses.csv"
+        ),
+        help="Path to the budget corporate-expenses CSV file.",
+    )
+
+    parser.add_argument(
         "--assumptions",
         default=(
             "data/assumptions/"
@@ -737,9 +752,9 @@ def build_graph_state(
             "--mode graph is used."
         )
 
-    selected_flow = identify_flow(
-        args.request
-    )
+    intent = parse_finance_intent(args.request)
+    selected_flow = intent.selected_flow
+    intent_filters = intent.to_filters()
 
     state: FinanceGraphState = {
         "user_request": args.request,
@@ -749,7 +764,7 @@ def build_graph_state(
         "error_message": "",
         "failed_node": "",
         "executed_nodes": [],
-        "filters": {},
+        "filters": intent_filters,
         "group_by": args.frequency,
         "frequency": args.frequency,
         "rolling_window": args.rolling_window,
@@ -757,17 +772,29 @@ def build_graph_state(
         "scenario_name": args.scenario_name,
     }
 
+    if intent.period.start_date is not None:
+        state["start_date"] = intent.period.start_date
+        state["start_month"] = intent.period.start_date[:7]
+
+    if intent.period.end_date is not None:
+        state["end_date"] = intent.period.end_date
+        state["end_month"] = intent.period.end_date[:7]
+
     operations_flows = {
         "kpi",
         "forecast",
         "variance",
         "scenario",
+        "gp_variance",
+        "pnl",
         "full",
     }
 
     budget_flows = {
         "budget",
         "variance",
+        "gp_variance",
+        "pnl",
         "full",
     }
 
@@ -784,6 +811,14 @@ def build_graph_state(
     if selected_flow in budget_flows:
         state["budget_data"] = load_csv(
             args.budget
+        )
+
+    if selected_flow == "pnl":
+        state["corporate_expenses_data"] = load_csv(
+            args.corporate_expenses
+        )
+        state["budget_corporate_expenses_data"] = load_csv(
+            args.budget_corporate_expenses
         )
 
     if selected_flow in assumption_flows:
@@ -887,6 +922,8 @@ def print_graph_result(
         return
 
     output_fields = (
+        "gp_variance_result",
+        "pnl_result",
         "kpi_result",
         "variance_result",
         "scenario_result",

@@ -43,7 +43,7 @@ class PnlCommentaryResult:
             Actual versus budget revenue commentary.
 
         profitability_commentary:
-            Gross profit, EBITDA, EBIT, and EBT commentary.
+            Gross profit, EBITDA, EBIT, EBT, and Net Profit commentary.
 
         cost_commentary:
             Direct cost and operating-expense commentary.
@@ -299,6 +299,24 @@ class PnlCommentaryAgent:
             f"{self._describe_profit_variance_inline(ebt_variance)}."
         )
 
+        if (
+            "net_profit" in actual
+            and "net_profit_variance" in variance
+        ):
+            actual_net_profit = self._get_number(
+                actual,
+                "net_profit",
+            )
+            net_profit_variance = self._get_number(
+                variance,
+                "net_profit_variance",
+            )
+            sentences.append(
+                "Net Profit was "
+                f"{self._format_currency(actual_net_profit)}"
+                f"{self._describe_profit_variance_inline(net_profit_variance)}."
+            )
+
         return " ".join(sentences)
 
     def _generate_revenue_commentary(
@@ -359,12 +377,20 @@ class PnlCommentaryAgent:
 
         comments: list[str] = []
 
-        metrics = (
+        metrics = [
             ("gross_profit", "Gross profit"),
             ("ebitda", "EBITDA"),
             ("ebit", "EBIT"),
             ("ebt", "EBT"),
-        )
+        ]
+
+        if (
+            "net_profit" in actual
+            and "net_profit" in budget
+            and "net_profit_variance" in variance
+            and "net_profit_variance_percentage" in variance
+        ):
+            metrics.append(("net_profit", "Net Profit"))
 
         for metric, display_name in metrics:
             actual_value = self._get_number(actual, metric)
@@ -409,13 +435,21 @@ class PnlCommentaryAgent:
 
         comments: list[str] = []
 
-        metrics = (
+        metrics = [
             ("direct_cost", "Direct cost"),
             ("sales_marketing", "Sales and marketing expense"),
             ("other_opex", "Other operating expense"),
             ("depreciation", "Depreciation"),
             ("interest", "Interest expense"),
-        )
+        ]
+
+        if (
+            "income_tax" in actual
+            and "income_tax" in budget
+            and "income_tax_variance" in variance
+            and "income_tax_variance_percentage" in variance
+        ):
+            metrics.append(("income_tax", "Income tax expense"))
 
         for metric, display_name in metrics:
             actual_value = self._get_number(actual, metric)

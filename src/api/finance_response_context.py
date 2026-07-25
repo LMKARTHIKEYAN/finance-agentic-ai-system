@@ -80,6 +80,36 @@ class FinanceResponseContextBuilder:
                     "effects, variance checks, and dimensional variance detail."
                 ),
             ),
+            "pnl_result": AgentContextDefinition(
+                result_key="pnl_result",
+                source_name="P&L Agent",
+                purpose=(
+                    "Provides the calculated Actual P&L, Budget P&L, variance P&L, "
+                    "variance amounts, variance percentages, actual and budget gross "
+                    "margin percentages, gross-margin percentage-point variance, "
+                    "monthly P&L results, consolidated summary, available months, "
+                    "and excluded-month information."
+                ),
+            ),
+            "gp_variance_result": AgentContextDefinition(
+                result_key="gp_variance_result",
+                source_name="GP% Variance Agent",
+                purpose=(
+                    "Provides the calculated Budget, Mix-only, Price-only, "
+                    "and Actual Gross Margin percentages; mix, price, and cost "
+                    "effects in percentage points and basis points; category "
+                    "unit economics; exclusions; and reconciliation status."
+                ),
+            ),
+            "pnl_commentary_result": AgentContextDefinition(
+                result_key="pnl_commentary_result",
+                source_name="P&L Commentary Agent",
+                purpose=(
+                    "Provides management commentary for the calculated P&L, including "
+                    "material favourable and unfavourable movements, profitability "
+                    "observations, risks, exceptions, and management attention items."
+                ),
+            ),
             "finance_rules_result": AgentContextDefinition(
                 result_key="finance_rules_result",
                 source_name="Finance Rules Agent",
@@ -160,6 +190,13 @@ class FinanceResponseContextBuilder:
                 "scenario_result",
                 "forecast_result",
             ),
+            "pnl": (
+                "pnl_result",
+                "pnl_commentary_result",
+            ),
+            "gp_variance": (
+                "gp_variance_result",
+            ),
             "full": (
                 "report_result",
                 "commentary_result",
@@ -211,6 +248,14 @@ class FinanceResponseContextBuilder:
                 "recommendation_result",
                 "commentary_result",
             ),
+            "pnl": (
+                "finance_rules_result",
+                "anomaly_result",
+                "root_cause_result",
+                "recommendation_result",
+                "commentary_result",
+                "report_result",
+            ),
             "full": (
                 "anomaly_result",
                 "root_cause_result",
@@ -232,6 +277,9 @@ class FinanceResponseContextBuilder:
     )
 
     _DEFAULT_SUPPORTING_RESULTS: tuple[str, ...] = (
+        "gp_variance_result",
+        "pnl_result",
+        "pnl_commentary_result",
         "anomaly_result",
         "root_cause_result",
         "recommendation_result",
@@ -247,7 +295,8 @@ class FinanceResponseContextBuilder:
 
         Args:
             selected_flow:
-                LangGraph finance flow such as ``variance`` or ``forecast``.
+                LangGraph finance flow such as ``variance``, ``forecast``,
+                or ``pnl``.
             finance_analysis:
                 JSON-compatible outputs collected from the finance agents.
 
@@ -313,8 +362,10 @@ class FinanceResponseContextBuilder:
             "selected_flow": normalized_flow,
             "response_instruction": (
                 "Use only the supplied values. Do not invent missing financial "
-                "figures, causes, recommendations, or source references. Clearly "
-                "label unavailable information."
+                "figures, causes, recommendations, or source references. Do not "
+                "recalculate values already supplied by an agent. Clearly label "
+                "information as unavailable only when the required source data is "
+                "genuinely absent."
             ),
             "primary_analysis": primary_analysis,
             "supporting_analysis": supporting_analysis,

@@ -29,6 +29,7 @@ from src.agents.data_quality.validation_agent import ValidationAgent
 from src.agents.finance.budget_agent import BudgetAgent
 from src.agents.finance.finance_rules_agent import FinanceRulesAgent
 from src.agents.finance.forecast_agent import ForecastAgent
+from src.agents.finance.gp_variance_agent import GrossProfitVarianceAgent
 from src.agents.finance.kpi_agent import KPIAgent
 from src.agents.finance.pnl_agent import PnlAgent
 from src.agents.finance.scenario_agent import ScenarioAgent
@@ -812,6 +813,43 @@ def pnl_node(
             ),
         )
 
+    except Exception as error:
+        return _record_failure(
+            state,
+            node_name,
+            error,
+        )
+
+
+def gp_variance_node(
+    state: FinanceGraphState,
+) -> FinanceGraphState:
+    """Run portfolio GP% mix, price, and cost decomposition."""
+
+    node_name = "gp_variance"
+
+    try:
+        operations_data = _require_dataframe(
+            state,
+            "operations_data",
+            node_name,
+        )
+        budget_data = _require_dataframe(
+            state,
+            "budget_data",
+            node_name,
+        )
+        result = GrossProfitVarianceAgent().analyze(
+            orders_data=operations_data,
+            budget_data=budget_data,
+            start_month=state.get("start_month"),
+            end_month=state.get("end_month"),
+        )
+        return _record_success(
+            state,
+            node_name,
+            gp_variance_result=result,
+        )
     except Exception as error:
         return _record_failure(
             state,

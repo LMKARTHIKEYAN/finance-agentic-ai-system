@@ -22,6 +22,7 @@ FlowType = Literal[
     "forecast",
     "variance",
     "scenario",
+    "gp_variance",
     "pnl",
     "full",
     "unknown",
@@ -216,6 +217,7 @@ class FinanceGraphState(TypedDict, total=False):
     forecast_result: Any
     scenario_result: Any
     variance_result: Any
+    gp_variance_result: Any
 
     # Complete Actual vs Budget P&L result returned by PnlAgent.analyze().
     pnl_result: Any

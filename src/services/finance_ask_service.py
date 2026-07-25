@@ -512,6 +512,7 @@ class FinanceAskService:
             "kpi",
             "forecast",
             "variance",
+            "gp_variance",
             "scenario",
             "pnl",
             "full",
@@ -520,6 +521,7 @@ class FinanceAskService:
         budget_flows = {
             "budget",
             "variance",
+            "gp_variance",
             "pnl",
             "full",
         }
@@ -1379,6 +1381,8 @@ class FinanceAskService:
             "variance": PromptType.VARIANCE_ANALYSIS,
             "root_cause": PromptType.ROOT_CAUSE_ANALYSIS,
             "scenario": PromptType.SCENARIO_ANALYSIS,
+            "gp_variance": PromptType.GP_VARIANCE_ANALYSIS,
+            "pnl": PromptType.PNL_ANALYSIS,
             "recommendation": PromptType.RECOMMENDATION,
             "commentary": PromptType.COMMENTARY,
             "full": PromptType.COMMENTARY,
@@ -1432,6 +1436,7 @@ class FinanceAskService:
             "forecast_result",
             "scenario_result",
             "variance_result",
+            "gp_variance_result",
             "pnl_result",
             "pnl_commentary_result",
             "finance_rules_result",

@@ -355,6 +355,44 @@ def test_build_dashboard_response_creates_waterfall(
     assert result.waterfall_data[2].value == 15_000
 
 
+def test_build_dashboard_response_creates_gp_variance_bridge() -> None:
+    """GP% analysis should populate the category table and bridge chart."""
+    result = build_dashboard_response(
+        selected_flow="gp_variance",
+        finance_analysis={
+            "gp_variance_result": {
+                "budget_gp_percentage": 30.0,
+                "actual_gp_percentage": 40.0,
+                "mix_effect_percentage_points": 2.0,
+                "price_effect_percentage_points": 3.0,
+                "cost_effect_percentage_points": 5.0,
+                "category_analysis": [
+                    {
+                        "month": "2026-04",
+                        "vehicle_category": "Mini",
+                        "actual_gp_percentage": 40.0,
+                        "budget_gp_percentage": 30.0,
+                    }
+                ],
+            }
+        },
+    )
+
+    assert result.category_table is not None
+    assert result.category_table.title == "GP% Decomposition by Category"
+    assert [point.label for point in result.waterfall_data] == [
+        "Budget GP%",
+        "Mix Effect",
+        "Price Effect",
+        "Cost Effect",
+        "Actual GP%",
+    ]
+    assert all(
+        point.unit == "percentage_points"
+        for point in result.waterfall_data
+    )
+
+
 def test_build_dashboard_response_creates_recommendations(
     sample_finance_analysis: dict,
 ) -> None:

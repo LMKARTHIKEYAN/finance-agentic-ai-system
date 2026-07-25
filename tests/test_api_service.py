@@ -224,6 +224,7 @@ def test_service_returns_structured_result(
         ("variance", PromptType.VARIANCE_ANALYSIS),
         ("root_cause", PromptType.ROOT_CAUSE_ANALYSIS),
         ("scenario", PromptType.SCENARIO_ANALYSIS),
+        ("pnl", PromptType.PNL_ANALYSIS),
         ("recommendation", PromptType.RECOMMENDATION),
         ("commentary", PromptType.COMMENTARY),
         ("full", PromptType.COMMENTARY),

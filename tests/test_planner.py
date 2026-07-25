@@ -276,7 +276,7 @@ def test_create_execution_plan_normalizes_case_and_whitespace() -> None:
 
 
 def test_get_supported_flows_returns_all_approved_flows() -> None:
-    """Supported-flow helper should return all six approved workflows."""
+    """Supported-flow helper should return all approved workflows."""
 
     assert get_supported_flows() == (
         "kpi",
@@ -284,6 +284,7 @@ def test_get_supported_flows_returns_all_approved_flows() -> None:
         "forecast",
         "variance",
         "scenario",
+        "gp_variance",
         "pnl",
         "full",
     )

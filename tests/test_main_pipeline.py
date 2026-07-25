@@ -5,13 +5,31 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from main import FinancePipeline, load_csv
+from main import (
+    FinancePipeline,
+    build_graph_state,
+    build_parser,
+    load_csv,
+    print_graph_result,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OPERATIONS_PATH = PROJECT_ROOT / "data" / "operations" / "sample_orders.csv"
 BUDGET_PATH = PROJECT_ROOT / "data" / "planning" / "sample_budget.csv"
 ASSUMPTIONS_PATH = PROJECT_ROOT / "data" / "assumptions" / "business_assumptions.csv"
+CORPORATE_EXPENSES_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "operations"
+    / "sample_corporate_expenses.csv"
+)
+BUDGET_CORPORATE_EXPENSES_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "planning"
+    / "sample_budget_corporate_expenses.csv"
+)
 
 
 @pytest.fixture(scope="module")
@@ -108,3 +126,64 @@ def test_invalid_operations_data_stops_pipeline() -> None:
 def test_load_csv_missing_file() -> None:
     with pytest.raises(FileNotFoundError, match="CSV file not found"):
         load_csv(PROJECT_ROOT / "data" / "missing.csv")
+
+
+def test_build_graph_state_loads_all_pnl_datasets() -> None:
+    """CLI graph state should supply every raw dataset required by P&L."""
+
+    args = build_parser().parse_args(
+        [
+            "--mode",
+            "graph",
+            "--request",
+            "Generate P&L for April 2026",
+            "--operations",
+            str(OPERATIONS_PATH),
+            "--budget",
+            str(BUDGET_PATH),
+            "--corporate-expenses",
+            str(CORPORATE_EXPENSES_PATH),
+            "--budget-corporate-expenses",
+            str(BUDGET_CORPORATE_EXPENSES_PATH),
+        ]
+    )
+
+    state = build_graph_state(args)
+
+    assert state["selected_flow"] == "pnl"
+    assert state["start_date"] == "2026-04-01"
+    assert state["end_date"] == "2026-04-30"
+    assert state["start_month"] == "2026-04"
+    assert state["end_month"] == "2026-04"
+    assert isinstance(state["operations_data"], pd.DataFrame)
+    assert isinstance(state["budget_data"], pd.DataFrame)
+    assert isinstance(state["corporate_expenses_data"], pd.DataFrame)
+    assert isinstance(
+        state["budget_corporate_expenses_data"],
+        pd.DataFrame,
+    )
+    assert not state["operations_data"].empty
+    assert not state["budget_data"].empty
+    assert not state["corporate_expenses_data"].empty
+    assert not state["budget_corporate_expenses_data"].empty
+
+
+def test_print_graph_result_prints_pnl_result(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Successful P&L CLI runs should expose their calculated result."""
+
+    print_graph_result(
+        {
+            "selected_flow": "pnl",
+            "execution_status": "completed",
+            "executed_nodes": ["pnl", "complete"],
+            "pnl_result": {"reporting_period": "April 2026"},
+        }
+    )
+
+    output = capsys.readouterr().out
+
+    assert "Selected flow: pnl" in output
+    assert "Execution status: completed" in output
+    assert "'reporting_period': 'April 2026'" in output

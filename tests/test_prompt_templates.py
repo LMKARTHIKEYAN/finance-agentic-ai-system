@@ -16,6 +16,7 @@ from src.rag.prompt_templates import (
     FINANCE_QA_TEMPLATE,
     FORECAST_ANALYSIS_TEMPLATE,
     KPI_EXPLANATION_TEMPLATE,
+    PNL_ANALYSIS_TEMPLATE,
     PROMPT_TEMPLATES,
     RECOMMENDATION_TEMPLATE,
     ROOT_CAUSE_TEMPLATE,
@@ -27,6 +28,7 @@ from src.rag.prompt_templates import (
     PromptType,
     build_commentary_prompt,
     build_finance_qa_prompt,
+    build_pnl_analysis_prompt,
     build_prompt_messages,
     build_recommendation_prompt,
     format_finance_analysis,
@@ -74,6 +76,7 @@ def test_prompt_type_values() -> None:
     assert PromptType.VARIANCE_ANALYSIS.value == "variance_analysis"
     assert PromptType.ROOT_CAUSE_ANALYSIS.value == "root_cause_analysis"
     assert PromptType.SCENARIO_ANALYSIS.value == "scenario_analysis"
+    assert PromptType.PNL_ANALYSIS.value == "pnl_analysis"
 
 
 def test_default_system_prompt_is_not_empty() -> None:
@@ -228,6 +231,7 @@ def test_registered_templates_are_complete() -> None:
         (PromptType.VARIANCE_ANALYSIS, VARIANCE_ANALYSIS_TEMPLATE),
         (PromptType.ROOT_CAUSE_ANALYSIS, ROOT_CAUSE_TEMPLATE),
         (PromptType.SCENARIO_ANALYSIS, SCENARIO_ANALYSIS_TEMPLATE),
+        (PromptType.PNL_ANALYSIS, PNL_ANALYSIS_TEMPLATE),
     ],
 )
 def test_get_prompt_template_with_enum(
@@ -246,6 +250,7 @@ def test_get_prompt_template_with_enum(
         (" COMMENTARY ", COMMENTARY_TEMPLATE),
         ("Recommendation", RECOMMENDATION_TEMPLATE),
         ("kpi_explanation", KPI_EXPLANATION_TEMPLATE),
+        ("pnl_analysis", PNL_ANALYSIS_TEMPLATE),
     ],
 )
 def test_get_prompt_template_with_string(
@@ -300,7 +305,11 @@ def test_list_prompt_types() -> None:
         "variance_analysis",
         "root_cause_analysis",
         "scenario_analysis",
+        "pnl_analysis",
+        "gp_variance_analysis",
     ]
+
+
 
 
 def test_format_finance_analysis_none() -> None:
@@ -667,6 +676,27 @@ def test_build_recommendation_prompt_with_additional_instructions() -> None:
     )
 
 
+def test_build_pnl_analysis_prompt() -> None:
+    """P&L helper should use the specialist P&L template."""
+
+    messages = build_pnl_analysis_prompt(
+        user_request="Generate P&L for April 2026",
+        finance_analysis={
+            "pnl_result": {
+                "revenue_actual": 1500,
+                "revenue_budget": 1600,
+            },
+        },
+        retrieved_context="Source 1: April finance records",
+    )
+
+    assert "Task: Profit and Loss Analysis" in messages.user
+    assert "| Particulars | Actual | Budget | Variance" in messages.user
+    assert "Generate P&L for April 2026" in messages.user
+    assert '"revenue_actual": 1500' in messages.user
+    assert "Source 1: April finance records" in messages.user
+
+
 @pytest.mark.parametrize(
     ("prompt_type", "expected_text"),
     [
@@ -693,6 +723,10 @@ def test_build_recommendation_prompt_with_additional_instructions() -> None:
         (
             PromptType.SCENARIO_ANALYSIS,
             "Task: Scenario Analysis",
+        ),
+        (
+            PromptType.PNL_ANALYSIS,
+            "Task: Profit and Loss Analysis",
         ),
     ],
 )
