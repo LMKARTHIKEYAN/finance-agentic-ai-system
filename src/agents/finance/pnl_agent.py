@@ -1061,12 +1061,17 @@ class PnlAgent:
             "interest": round(interest, 2),
             "ebt": round(ebt, 2),
         }
-
     def _validate_calculated_pnl(
         self,
         data: pd.DataFrame,
     ) -> None:
-        """Validate generated P&L formulas and output quality."""
+        """
+        Validate generated P&L formulas and output quality.
+
+        A tolerance of 0.01 is allowed because financial values are displayed
+        at two decimal places. Component-level rounding can otherwise create
+        a one-cent difference even when the underlying formula is correct.
+        """
         if data.empty:
             raise ValueError(
                 "Calculated P&L contains no rows."
@@ -1075,7 +1080,9 @@ class PnlAgent:
         if data["month"].duplicated().any():
             duplicate_months = sorted(
                 data.loc[
-                    data["month"].duplicated(keep=False),
+                    data["month"].duplicated(
+                        keep=False
+                    ),
                     "month",
                 ].unique()
             )
@@ -1091,13 +1098,16 @@ class PnlAgent:
             if column != "month"
         ]
 
-        if data[numeric_columns].isna().any().any():
+        if data[
+            numeric_columns
+        ].isna().any().any():
             raise ValueError(
                 "Calculated P&L contains missing financial values."
             )
 
         expected_gross_profit = (
-            data["revenue"] - data["direct_cost"]
+            data["revenue"]
+            - data["direct_cost"]
         ).round(2)
 
         expected_ebitda = (
@@ -1107,11 +1117,13 @@ class PnlAgent:
         ).round(2)
 
         expected_ebit = (
-            data["ebitda"] - data["depreciation"]
+            data["ebitda"]
+            - data["depreciation"]
         ).round(2)
 
         expected_ebt = (
-            data["ebit"] - data["interest"]
+            data["ebit"]
+            - data["interest"]
         ).round(2)
 
         formula_checks = {
@@ -1121,11 +1133,61 @@ class PnlAgent:
             "ebt": expected_ebt,
         }
 
+        formula_tolerance = 0.010001
+
         for column, expected_values in formula_checks.items():
-            if not data[column].round(2).equals(expected_values):
-                raise ValueError(
-                    f"Calculated P&L failed the {column} formula check."
+            actual_values = pd.to_numeric(
+                data[column],
+                errors="coerce",
+            ).round(2)
+
+            expected_numeric_values = pd.to_numeric(
+                expected_values,
+                errors="coerce",
+            ).round(2)
+
+            formula_difference = (
+                actual_values
+                - expected_numeric_values
+            ).abs()
+
+            invalid_formula_mask = (
+                formula_difference
+                > formula_tolerance
+            )
+
+            if invalid_formula_mask.any():
+                invalid_rows = data.index[
+                    invalid_formula_mask
+                ].tolist()[:10]
+
+                invalid_months = (
+                    data.loc[
+                        invalid_formula_mask,
+                        "month",
+                    ]
+                    .astype(str)
+                    .head(10)
+                    .tolist()
                 )
+
+                maximum_difference = float(
+                    formula_difference.loc[
+                        invalid_formula_mask
+                    ].max()
+                )
+
+                raise ValueError(
+                    "Calculated P&L failed the "
+                    f"{column} formula check. "
+                    f"Example rows: {invalid_rows}. "
+                    f"Example months: {invalid_months}. "
+                    "Maximum difference: "
+                    f"{maximum_difference:.4f}."
+                )
+
+    
+    
 
     def _apply_month_filter(
         self,
@@ -1219,33 +1281,64 @@ class PnlAgent:
         data: pd.DataFrame,
         dataset_name: str,
     ) -> pd.Series:
-        """Normalize month values to YYYY-MM format."""
+        """
+        Normalize exact ``YYYY-MM`` month strings.
+
+        pandas may accept values such as ``2026-1`` with a ``%Y-%m`` parser.
+        This method therefore validates the text format explicitly before
+        converting it to a monthly period.
+        """
         normalized_values = (
             data["month"]
             .astype("string")
             .str.strip()
         )
 
+        valid_format_mask = normalized_values.str.fullmatch(
+            r"\d{4}-(0[1-9]|1[0-2])",
+            na=False,
+        )
+
         parsed_months = pd.to_datetime(
-            normalized_values,
+            normalized_values.where(
+                valid_format_mask
+            ),
             format="%Y-%m",
             errors="coerce",
         )
 
-        invalid_month_mask = parsed_months.isna()
+        invalid_month_mask = (
+            ~valid_format_mask
+            | parsed_months.isna()
+        )
 
         if invalid_month_mask.any():
             invalid_rows = data.index[
                 invalid_month_mask
             ].tolist()[:10]
 
-            raise ValueError(
-                f"{dataset_name} contains invalid month values. "
-                "Expected YYYY-MM format. "
-                f"Example rows: {invalid_rows}"
+            invalid_values = (
+                data.loc[
+                    invalid_month_mask,
+                    "month",
+                ]
+                .astype(str)
+                .head(10)
+                .tolist()
             )
 
-        return parsed_months.dt.to_period("M").astype(str)
+            raise ValueError(
+                f"{dataset_name} contains invalid month values. "
+                "Expected exact YYYY-MM format. "
+                f"Example rows: {invalid_rows}. "
+                f"Example values: {invalid_values}"
+            )
+
+        return (
+            parsed_months
+            .dt.to_period("M")
+            .astype(str)
+        )
 
     def _convert_numeric_columns(
         self,

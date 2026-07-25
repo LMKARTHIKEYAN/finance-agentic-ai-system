@@ -513,12 +513,14 @@ class FinanceAskService:
             "forecast",
             "variance",
             "scenario",
+            "pnl",
             "full",
         }
 
         budget_flows = {
             "budget",
             "variance",
+            "pnl",
             "full",
         }
 
@@ -1430,6 +1432,8 @@ class FinanceAskService:
             "forecast_result",
             "scenario_result",
             "variance_result",
+            "pnl_result",
+            "pnl_commentary_result",
             "finance_rules_result",
             "anomaly_result",
             "root_cause_result",

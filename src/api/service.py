@@ -69,7 +69,8 @@ class FinanceDataPaths:
     operations: Path
     budget: Path
     assumptions: Path
-
+    corporate_expenses: Path | None = None
+    budget_corporate_expenses: Path | None = None
 
 @dataclass(frozen=True)
 class AskServiceResult:
@@ -446,12 +447,14 @@ class FinanceAskService:
             "forecast",
             "variance",
             "scenario",
+            "pnl",
             "full",
         }
 
         budget_flows = {
             "budget",
             "variance",
+            "pnl",
             "full",
         }
 
@@ -459,6 +462,11 @@ class FinanceAskService:
             "scenario",
             "full",
         }
+
+        pnl_support_flows = {
+             "pnl",
+            "full",
+       }
 
         if selected_flow in operations_flows:
             operations_data = self._load_csv(
@@ -497,7 +505,89 @@ class FinanceAskService:
             )
 
             state["budget_data"] = filtered_budget
+            if selected_flow in budget_flows:
+                       budget_data = self._load_csv(
+                           self._data_paths.budget
+            )
+            
 
+            filtered_budget = self._apply_intent_filters(
+                dataframe=budget_data,
+                intent=intent,
+                dataset_name="budget",
+            )
+
+            self._log_filtered_dataset(
+                dataframe=filtered_budget,
+                dataset_name="budget",
+                intent=intent,
+            )
+
+            state["budget_data"] = filtered_budget
+
+        # Add the corporate-expense loading block here.
+        if selected_flow in pnl_support_flows:
+            corporate_expenses_path = (
+                self._data_paths.corporate_expenses
+            )
+
+            budget_corporate_expenses_path = (
+                self._data_paths.budget_corporate_expenses
+            )
+
+            if corporate_expenses_path is None:
+                raise FinanceAskServiceError(
+                    "Corporate-expenses data path is not configured."
+                )
+
+            if budget_corporate_expenses_path is None:
+                raise FinanceAskServiceError(
+                    "Budget corporate-expenses data path "
+                    "is not configured."
+                )
+
+            corporate_expenses_data = self._load_csv(
+                corporate_expenses_path
+            )
+
+            filtered_corporate_expenses = (
+                self._apply_intent_filters(
+                    dataframe=corporate_expenses_data,
+                    intent=intent,
+                    dataset_name="corporate expenses",
+                    apply_category=False,
+                )
+            )
+
+            state["corporate_expenses_data"] = (
+                filtered_corporate_expenses
+            )
+
+            budget_corporate_expenses_data = self._load_csv(
+                budget_corporate_expenses_path
+            )
+
+            filtered_budget_corporate_expenses = (
+                self._apply_intent_filters(
+                    dataframe=budget_corporate_expenses_data,
+                    intent=intent,
+                    dataset_name="budget corporate expenses",
+                    apply_category=False,
+                )
+            )
+
+            state["budget_corporate_expenses_data"] = (
+                filtered_budget_corporate_expenses
+            )
+
+        if selected_flow in assumption_flows:
+            state["business_assumptions"] = (
+                self._load_csv(
+                    self._data_paths.assumptions
+                )
+            )
+
+        return state
         if selected_flow in assumption_flows:
             state["business_assumptions"] = (
                 self._load_csv(
@@ -622,6 +712,7 @@ class FinanceAskService:
         dataframe: pd.DataFrame,
         intent: FinanceIntent,
         dataset_name: str,
+        apply_category: bool = True,
     ) -> pd.DataFrame:
         """
         Apply parsed period and category filters before graph execution.
@@ -665,11 +756,11 @@ class FinanceAskService:
             intent=intent,
             dataset_name=dataset_name,
         )
-
-        filtered_data = cls._filter_by_category(
-            dataframe=filtered_data,
-            intent=intent,
-            dataset_name=dataset_name,
+        if apply_category:
+            filtered_data = cls._filter_by_category(
+              dataframe=filtered_data,
+              intent=intent,
+              dataset_name=dataset_name,
         )
 
         if filtered_data.empty:
@@ -1363,6 +1454,8 @@ class FinanceAskService:
             "forecast_result",
             "scenario_result",
             "variance_result",
+            "pnl_result",
+            "pnl_commentary_result",
             "finance_rules_result",
             "anomaly_result",
             "root_cause_result",

@@ -504,28 +504,38 @@ def test_pnl_node_success(
         excluded_actual_months=[],
         excluded_budget_months=[],
     )
+    
 
     def fake_analyze(
         self: Any,
-        operations_data: pd.DataFrame,
-        budget_data: pd.DataFrame,
+        orders_data: pd.DataFrame,
         corporate_expenses_data: pd.DataFrame,
+        budget_data: pd.DataFrame,
         budget_corporate_expenses_data: pd.DataFrame,
         start_month: str | None = None,
         end_month: str | None = None,
     ) -> Any:
-        assert operations_data.equals(valid_operations_data)
-        assert budget_data.equals(valid_budget_data)
+        assert orders_data.equals(
+            valid_operations_data
+        )
+
         assert corporate_expenses_data.equals(
             state["corporate_expenses_data"]
         )
+
+        assert budget_data.equals(
+            valid_budget_data
+        )
+
         assert budget_corporate_expenses_data.equals(
             state["budget_corporate_expenses_data"]
         )
+
         assert start_month == "2026-01"
         assert end_month == "2026-02"
-        return expected_result
 
+        return expected_result
+    
     monkeypatch.setattr(
         nodes.PnlAgent,
         "analyze",
@@ -535,8 +545,8 @@ def test_pnl_node_success(
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_operations_data": valid_operations_data,
-        "cleaned_budget_data": valid_budget_data,
+        "operations_data": valid_operations_data,
+        "budget_data": valid_budget_data,
         "corporate_expenses_data": corporate_expenses_data,
         "budget_corporate_expenses_data": (
             budget_corporate_expenses_data
@@ -564,16 +574,16 @@ def test_pnl_node_success(
     assert "pnl" in result["executed_nodes"]
 
 
-def test_pnl_node_requires_cleaned_operations_data(
+def test_pnl_node_requires_operations_data(
     valid_budget_data: pd.DataFrame,
     base_state: FinanceGraphState,
 ) -> None:
-    """P&L execution should fail without cleaned operations data."""
+    """P&L execution should fail without operations data."""
 
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_budget_data": valid_budget_data,
+        "budget_data": valid_budget_data,
         "corporate_expenses_data": pd.DataFrame(
             {
                 "month": ["2026-01"],
@@ -594,20 +604,20 @@ def test_pnl_node_requires_cleaned_operations_data(
 
     assert result["execution_status"] == "failed"
     assert result["failed_node"] == "pnl"
-    assert "cleaned_operations_data" in result["error_message"]
+    assert "operations_data" in result["error_message"]
     assert result["errors"]
 
 
-def test_pnl_node_requires_cleaned_budget_data(
+def test_pnl_node_requires_budget_data(
     valid_operations_data: pd.DataFrame,
     base_state: FinanceGraphState,
 ) -> None:
-    """P&L execution should fail without cleaned budget data."""
+    """P&L execution should fail without budget data."""
 
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_operations_data": valid_operations_data,
+        "operations_data": valid_operations_data,
         "corporate_expenses_data": pd.DataFrame(
             {
                 "month": ["2026-01"],
@@ -628,7 +638,7 @@ def test_pnl_node_requires_cleaned_budget_data(
 
     assert result["execution_status"] == "failed"
     assert result["failed_node"] == "pnl"
-    assert "cleaned_budget_data" in result["error_message"]
+    assert "budget_data" in result["error_message"]
 
 
 def test_pnl_node_requires_corporate_expenses_data(
@@ -641,8 +651,8 @@ def test_pnl_node_requires_corporate_expenses_data(
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_operations_data": valid_operations_data,
-        "cleaned_budget_data": valid_budget_data,
+        "operations_data": valid_operations_data,
+        "budget_data": valid_budget_data,
         "budget_corporate_expenses_data": pd.DataFrame(
             {
                 "month": ["2026-01"],
@@ -669,8 +679,8 @@ def test_pnl_node_requires_budget_corporate_expenses_data(
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_operations_data": valid_operations_data,
-        "cleaned_budget_data": valid_budget_data,
+        "operations_data": valid_operations_data,
+        "budget_data": valid_budget_data,
         "corporate_expenses_data": pd.DataFrame(
             {
                 "month": ["2026-01"],
@@ -715,8 +725,8 @@ def test_pnl_node_rejects_missing_result_output(
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_operations_data": valid_operations_data,
-        "cleaned_budget_data": valid_budget_data,
+        "operations_data": valid_operations_data,
+        "budget_data": valid_budget_data,
         "corporate_expenses_data": pd.DataFrame(
             {
                 "month": ["2026-01"],
@@ -760,8 +770,8 @@ def test_pnl_node_records_agent_exception(
     state: FinanceGraphState = {
         **base_state,
         "selected_flow": "pnl",
-        "cleaned_operations_data": valid_operations_data,
-        "cleaned_budget_data": valid_budget_data,
+        "operations_data": valid_operations_data,
+        "budget_data": valid_budget_data,
         "corporate_expenses_data": pd.DataFrame(
             {
                 "month": ["2026-01"],

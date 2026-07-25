@@ -140,6 +140,12 @@ def build_data_paths() -> FinanceDataPaths:
     - FINANCE_OPERATIONS_DATA_PATH
     - FINANCE_BUDGET_DATA_PATH
     - FINANCE_ASSUMPTIONS_DATA_PATH
+    - FINANCE_CORPORATE_EXPENSES_DATA_PATH
+    - FINANCE_BUDGET_CORPORATE_EXPENSES_DATA_PATH
+
+    Returns:
+        Configured FinanceDataPaths containing all local datasets required
+        by the finance workflows, including P&L analysis.
     """
 
     return FinanceDataPaths(
@@ -154,6 +160,17 @@ def build_data_paths() -> FinanceDataPaths:
         assumptions=_get_environment_path(
             "FINANCE_ASSUMPTIONS_DATA_PATH",
             "data/assumptions/business_assumptions.csv",
+        ),
+        corporate_expenses=_get_environment_path(
+            "FINANCE_CORPORATE_EXPENSES_DATA_PATH",
+            "data/operations/sample_corporate_expenses.csv",
+        ),
+        budget_corporate_expenses=_get_environment_path(
+            "FINANCE_BUDGET_CORPORATE_EXPENSES_DATA_PATH",
+            (
+                "data/planning/"
+                "sample_budget_corporate_expenses.csv"
+            ),
         ),
     )
 
@@ -180,6 +197,9 @@ def build_pgvector_store() -> PGVectorStore:
     Example:
 
     postgresql://postgres:postgres@localhost:5432/finance_agentic_ai
+
+    Returns:
+        Configured PostgreSQL pgvector store.
     """
 
     database_url = _get_required_environment_variable(

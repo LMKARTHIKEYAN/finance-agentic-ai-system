@@ -675,36 +675,41 @@ def pnl_node(
     state: FinanceGraphState,
 ) -> FinanceGraphState:
     """
-    Run the existing PnlAgent.
+    Run the existing PnlAgent using the filtered raw source datasets.
 
-    The node uses cleaned operations and budget data produced by the existing
-    validation and cleaning nodes. Corporate-expense datasets are passed
-    directly to PnlAgent, which remains responsible for validating and
-    preparing those P&L-specific inputs.
+    The P&L agent owns its own date, month, numeric, and finance-specific
+    validation. Therefore, it receives the filtered raw operations and budget
+    datasets rather than the generic cleaned datasets, whose datetime
+    conversions are intended for other finance agents.
+
+    Corporate-expense datasets are also passed directly to PnlAgent.
 
     The complete agent result is stored in ``pnl_result``. Its structured
-    outputs are also copied into dedicated state fields so FastAPI, Streamlit,
-    RAG, and chatbot response-building layers can access them directly.
+    outputs are copied into dedicated state fields for FastAPI, Streamlit,
+    RAG, and chatbot response-building layers.
     """
 
     node_name = "pnl"
 
     try:
-        cleaned_operations_data = _require_dataframe(
+        operations_data = _require_dataframe(
             state,
-            "cleaned_operations_data",
+            "operations_data",
             node_name,
         )
-        cleaned_budget_data = _require_dataframe(
+
+        budget_data = _require_dataframe(
             state,
-            "cleaned_budget_data",
+            "budget_data",
             node_name,
         )
+
         corporate_expenses_data = _require_dataframe(
             state,
             "corporate_expenses_data",
             node_name,
         )
+
         budget_corporate_expenses_data = _require_dataframe(
             state,
             "budget_corporate_expenses_data",
@@ -712,9 +717,9 @@ def pnl_node(
         )
 
         result = PnlAgent().analyze(
-            operations_data=cleaned_operations_data,
-            budget_data=cleaned_budget_data,
+            orders_data=operations_data,
             corporate_expenses_data=corporate_expenses_data,
+            budget_data=budget_data,
             budget_corporate_expenses_data=(
                 budget_corporate_expenses_data
             ),
@@ -722,25 +727,46 @@ def pnl_node(
             end_month=state.get("end_month"),
         )
 
-        actual_pnl = getattr(result, "actual_pnl", None)
-        budget_pnl = getattr(result, "budget_pnl", None)
-        variance_pnl = getattr(result, "variance_pnl", None)
+        actual_pnl = getattr(
+            result,
+            "actual_pnl",
+            None,
+        )
+
+        budget_pnl = getattr(
+            result,
+            "budget_pnl",
+            None,
+        )
+
+        variance_pnl = getattr(
+            result,
+            "variance_pnl",
+            None,
+        )
 
         pnl_summary = getattr(
             result,
             "pnl_summary",
-            getattr(result, "summary", None),
+            getattr(
+                result,
+                "summary",
+                None,
+            ),
         )
+
         available_months = getattr(
             result,
             "available_months",
             [],
         )
+
         excluded_actual_months = getattr(
             result,
             "excluded_actual_months",
             [],
         )
+
         excluded_budget_months = getattr(
             result,
             "excluded_budget_months",
@@ -775,7 +801,9 @@ def pnl_node(
             budget_pnl=budget_pnl,
             variance_pnl=variance_pnl,
             pnl_summary=pnl_summary,
-            pnl_available_months=list(available_months),
+            pnl_available_months=list(
+                available_months
+            ),
             pnl_excluded_actual_months=list(
                 excluded_actual_months
             ),
@@ -785,8 +813,11 @@ def pnl_node(
         )
 
     except Exception as error:
-        return _record_failure(state, node_name, error)
-
+        return _record_failure(
+            state,
+            node_name,
+            error,
+        )
 
 
 def finance_rules_node(
