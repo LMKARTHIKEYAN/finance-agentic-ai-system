@@ -30,6 +30,7 @@ from src.api.schemas import (
     DashboardRisk,
     DashboardTable,
     DashboardTrendPoint,
+    DashboardVisualization,
     DashboardWaterfallPoint,
 )
 
@@ -121,6 +122,7 @@ def build_dashboard_response(
         finance_analysis,
         "gp_variance_result",
     )
+    pnl_result = _get_mapping(finance_analysis, "pnl_result")
 
     kpi_cards = _build_kpi_cards(
         operations_result=operations_result,
@@ -140,6 +142,8 @@ def build_dashboard_response(
         variance_table = _build_gp_variance_portfolio_table(
             gp_variance_result
         )
+    if pnl_result:
+        variance_table = _build_pnl_comparison_table(pnl_result)
 
     category_table = _build_category_table(
         operations_result=operations_result,
@@ -165,6 +169,17 @@ def build_dashboard_response(
         waterfall_data = _build_gp_variance_waterfall(
             gp_variance_result
         )
+
+    visualizations = _build_related_visualizations(
+        selected_flow=normalized_flow,
+        operations_result=operations_result,
+        budget_result=budget_result,
+        forecast_result=forecast_result,
+        scenario_result=scenario_result,
+        variance_result=variance_result,
+        gp_variance_result=gp_variance_result,
+        pnl_result=pnl_result,
+    )
 
     recommendations = _build_recommendations(
         recommendation_result,
@@ -197,6 +212,7 @@ def build_dashboard_response(
         category_table=category_table,
         trend_data=trend_data,
         waterfall_data=waterfall_data,
+        visualizations=visualizations,
         recommendations=recommendations,
         risks=risks,
         executive_summary=executive_summary,
@@ -209,6 +225,7 @@ def build_dashboard_response(
         "category_table",
         "trend_data",
         "waterfall_data",
+        "visualizations",
         "recommendations",
         "risks",
         "executive_summary",
@@ -248,6 +265,7 @@ def build_dashboard_response(
         category_table=category_table,
         trend_data=trend_data,
         waterfall_data=waterfall_data,
+        visualizations=visualizations,
         recommendations=recommendations,
         risks=risks,
         executive_summary=executive_summary,
@@ -529,10 +547,6 @@ def _build_kpi_table(
             "KPI": card.label,
             "Actual": card.value,
             "Unit": card.unit,
-            "Comparison": card.comparison_value,
-            "Variance": card.delta,
-            "Variance %": card.delta_percentage,
-            "Status": card.status,
         }
         for card in kpi_cards
     ]
@@ -543,10 +557,6 @@ def _build_kpi_table(
             "KPI",
             "Actual",
             "Unit",
-            "Comparison",
-            "Variance",
-            "Variance %",
-            "Status",
         ],
         rows=rows,
     )
@@ -808,6 +818,25 @@ def _build_gp_variance_portfolio_table(
     )
 
 
+def _build_pnl_comparison_table(
+    result: dict[str, Any],
+) -> DashboardTable | None:
+    """Create a structured monthly Actual-versus-Budget P&L table."""
+
+    rows = [
+        row
+        for row in _get_list(result, "variance_pnl")
+        if isinstance(row, dict)
+    ]
+    if not rows:
+        return None
+    return DashboardTable(
+        title="Actual vs Budget P&L",
+        columns=_collect_columns(rows),
+        rows=rows,
+    )
+
+
 def _build_trend_data(
     *,
     operations_result: dict[str, Any],
@@ -1032,6 +1061,268 @@ def _build_gp_variance_waterfall(
             start=1,
         )
     ]
+
+
+def _build_related_visualizations(
+    *,
+    selected_flow: str,
+    operations_result: dict[str, Any],
+    budget_result: dict[str, Any],
+    forecast_result: dict[str, Any],
+    scenario_result: dict[str, Any],
+    variance_result: dict[str, Any],
+    gp_variance_result: dict[str, Any],
+    pnl_result: dict[str, Any],
+) -> list[DashboardVisualization]:
+    """Build no more than the most useful charts for the selected flow."""
+
+    charts: list[DashboardVisualization] = []
+
+    if selected_flow == "kpi":
+        rows = _top_category_rows(
+            _get_list(operations_result, "vehicle_summary"),
+            "completed_orders",
+        )
+        charts.extend([
+            _chart_from_rows(
+                "Completed Orders by Vehicle Category",
+                rows,
+                "vehicle_category",
+                ("completed_orders",),
+                "count",
+            ),
+            _chart_from_rows(
+                "Commission Revenue by Vehicle Category",
+                _top_category_rows(
+                    rows,
+                    "total_commission_revenue",
+                    fallback_field="total_revenue",
+                ),
+                "vehicle_category",
+                (
+                    "total_commission_revenue"
+                    if any("total_commission_revenue" in row for row in rows)
+                    else "total_revenue",
+                ),
+                "currency",
+            ),
+        ])
+    elif selected_flow == "budget":
+        rows = _get_list(budget_result, "vehicle_summary")
+        charts.extend([
+            _chart_from_rows(
+                "Budget Orders by Vehicle Category",
+                _top_category_rows(rows, "budget_orders"),
+                "vehicle_category",
+                ("budget_orders",),
+                "count",
+            ),
+            _chart_from_rows(
+                "Budget Revenue by Vehicle Category",
+                _top_category_rows(rows, "budget_revenue"),
+                "vehicle_category",
+                ("budget_revenue",),
+                "currency",
+            ),
+        ])
+    elif selected_flow == "variance":
+        rows = _top_category_rows(
+            _get_list(variance_result, "vehicle_variance_summary"),
+            "actual_revenue",
+        )
+        charts.extend([
+            _chart_from_rows(
+                "Actual vs Budget Revenue by Vehicle Category",
+                rows,
+                "vehicle_category",
+                ("actual_revenue", "budget_revenue"),
+                "currency",
+            ),
+            _chart_from_rows(
+                "Revenue Variance by Vehicle Category",
+                _top_category_rows(rows, "revenue_variance", absolute=True),
+                "vehicle_category",
+                ("revenue_variance",),
+                "currency",
+            ),
+        ])
+    elif selected_flow == "gp_variance":
+        category_rows = _get_list(gp_variance_result, "category_analysis")
+        bridge_rows = [
+            {
+                "Effect": label,
+                "Percentage Points": gp_variance_result.get(field),
+            }
+            for label, field in (
+                ("Mix", "mix_effect_percentage_points"),
+                ("Price", "price_effect_percentage_points"),
+                ("Cost", "cost_effect_percentage_points"),
+            )
+        ]
+        charts.extend([
+            _chart_from_rows(
+                "GP% Mix, Price and Cost Bridge",
+                bridge_rows,
+                "Effect",
+                ("Percentage Points",),
+                "percentage_points",
+            ),
+            _chart_from_rows(
+                "Price and Cost Effects by Vehicle Category",
+                _top_category_rows(
+                    category_rows,
+                    "cost_effect_percentage_points",
+                    absolute=True,
+                ),
+                "vehicle_category",
+                (
+                    "price_effect_percentage_points",
+                    "cost_effect_percentage_points",
+                ),
+                "percentage_points",
+            ),
+        ])
+    elif selected_flow == "pnl":
+        charts.extend(_build_pnl_visualizations(pnl_result))
+    elif selected_flow == "forecast":
+        charts.append(_chart_from_rows(
+            "Forecast Revenue Trend",
+            _get_list(forecast_result, "forecast_summary"),
+            "forecast_period",
+            ("forecast_revenue",),
+            "currency",
+            chart_type="line",
+        ))
+    elif selected_flow == "scenario":
+        charts.append(_chart_from_rows(
+            "Base Forecast vs Scenario Revenue",
+            _get_list(scenario_result, "adjusted_forecast"),
+            "forecast_period",
+            ("base_revenue", "adjusted_revenue"),
+            "currency",
+            chart_type="line",
+        ))
+    elif selected_flow == "full":
+        charts.extend(_build_related_visualizations(
+            selected_flow="variance",
+            operations_result=operations_result,
+            budget_result=budget_result,
+            forecast_result=forecast_result,
+            scenario_result=scenario_result,
+            variance_result=variance_result,
+            gp_variance_result=gp_variance_result,
+            pnl_result=pnl_result,
+        )[:2])
+        forecast_chart = _chart_from_rows(
+            "Forecast Revenue Trend",
+            _get_list(forecast_result, "forecast_summary"),
+            "forecast_period",
+            ("forecast_revenue",),
+            "currency",
+            chart_type="line",
+        )
+        charts.append(forecast_chart)
+
+    return [
+        chart for chart in charts
+        if chart.records and chart.value_fields
+    ][:3 if selected_flow == "full" else 2]
+
+
+def _build_pnl_visualizations(
+    pnl_result: dict[str, Any],
+) -> list[DashboardVisualization]:
+    actual = {
+        row.get("month"): row
+        for row in _get_list(pnl_result, "actual_pnl")
+        if isinstance(row, dict)
+    }
+    budget = {
+        row.get("month"): row
+        for row in _get_list(pnl_result, "budget_pnl")
+        if isinstance(row, dict)
+    }
+    records = []
+    for month in sorted(set(actual) & set(budget)):
+        actual_row = actual[month]
+        budget_row = budget[month]
+        record: dict[str, Any] = {"Month": month}
+        for metric, label in (
+            ("revenue", "Revenue"),
+            ("gross_profit", "Gross Profit"),
+            ("ebitda", "EBITDA"),
+            ("net_profit", "Net Profit"),
+        ):
+            record[f"Actual {label}"] = actual_row.get(metric)
+            record[f"Budget {label}"] = budget_row.get(metric)
+        records.append(record)
+    return [
+        _chart_from_rows(
+            "Actual vs Budget P&L",
+            records,
+            "Month",
+            (
+                "Actual Revenue",
+                "Budget Revenue",
+                "Actual Gross Profit",
+                "Budget Gross Profit",
+                "Actual EBITDA",
+                "Budget EBITDA",
+                "Actual Net Profit",
+                "Budget Net Profit",
+            ),
+            "currency",
+        )
+    ]
+
+
+def _chart_from_rows(
+    title: str,
+    rows: list[dict[str, Any]],
+    category_field: str,
+    value_fields: tuple[str, ...],
+    unit: str,
+    *,
+    chart_type: str = "bar",
+) -> DashboardVisualization:
+    clean_rows = [row for row in rows if isinstance(row, dict)]
+    usable_fields = [
+        field for field in value_fields
+        if any(_as_number(row.get(field)) is not None for row in clean_rows)
+    ]
+    return DashboardVisualization(
+        title=title,
+        chart_type=chart_type,
+        category_field=category_field,
+        value_fields=usable_fields,
+        records=clean_rows,
+        unit=unit,
+    )
+
+
+def _top_category_rows(
+    rows: list[dict[str, Any]],
+    field: str,
+    *,
+    fallback_field: str | None = None,
+    absolute: bool = False,
+) -> list[dict[str, Any]]:
+    usable_field = (
+        field
+        if any(_as_number(row.get(field)) is not None for row in rows)
+        else fallback_field
+    )
+    if not usable_field:
+        return []
+    return sorted(
+        [row for row in rows if isinstance(row, dict)],
+        key=lambda row: (
+            abs(_as_number(row.get(usable_field)) or 0)
+            if absolute
+            else (_as_number(row.get(usable_field)) or 0)
+        ),
+        reverse=True,
+    )[:10]
 
 
 def _build_recommendations(
@@ -1283,6 +1574,7 @@ def _identify_available_sections(
     category_table: DashboardTable | None,
     trend_data: list[DashboardTrendPoint],
     waterfall_data: list[DashboardWaterfallPoint],
+    visualizations: list[DashboardVisualization],
     recommendations: list[DashboardRecommendation],
     risks: list[DashboardRisk],
     executive_summary: str | None,
@@ -1298,6 +1590,7 @@ def _identify_available_sections(
         "category_table": category_table,
         "trend_data": trend_data,
         "waterfall_data": waterfall_data,
+        "visualizations": visualizations,
         "recommendations": recommendations,
         "risks": risks,
         "executive_summary": executive_summary,

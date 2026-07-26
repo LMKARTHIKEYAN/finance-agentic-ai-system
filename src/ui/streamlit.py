@@ -110,16 +110,21 @@ def main() -> None:
             "dashboard"
         )
 
-        if (
+        has_dashboard = (
             isinstance(dashboard, dict)
-            and dashboard
+            and bool(dashboard)
+        )
+
+        if (
+            has_dashboard
         ):
             _render_dashboard(
                 dashboard
             )
 
         _render_ai_answer(
-            latest_response
+            latest_response,
+            collapsed=has_dashboard,
         )
 
         _render_sources(
@@ -191,6 +196,8 @@ def _initialize_session_state() -> None:
         "top_k": DEFAULT_TOP_K,
         "show_intent_details": False,
         "request_in_progress": False,
+        "user_id": "streamlit-local-user",
+        "session_id": None,
     }
 
     for key, default_value in defaults.items():
@@ -417,6 +424,8 @@ def _process_user_message(
                 top_k=int(
                     st.session_state.top_k
                 ),
+                user_id=st.session_state.user_id,
+                session_id=st.session_state.session_id,
             )
 
     except FinanceApiConnectionError as exc:
@@ -578,10 +587,16 @@ def _handle_api_response(
             "did not return a response message."
         )
 
+    visible_answer = _select_visible_chat_answer(
+        response=response,
+        answer=answer,
+        clarification_required=clarification_required,
+    )
+
     st.session_state.messages.append(
         {
             "role": "assistant",
-            "content": answer,
+            "content": visible_answer,
         }
     )
 
@@ -614,6 +629,30 @@ def _handle_api_response(
     st.session_state.pending_request = None
     st.session_state.pending_intent = {}
     st.session_state.latest_response = response
+    returned_session_id = response.get("session_id")
+    if isinstance(returned_session_id, str) and returned_session_id:
+        st.session_state.session_id = returned_session_id
+
+
+def _select_visible_chat_answer(
+    *,
+    response: dict[str, Any],
+    answer: str,
+    clarification_required: bool,
+) -> str:
+    """Return a concise chat message when a full dashboard will be shown."""
+
+    dashboard = response.get("dashboard")
+    if (
+        not clarification_required
+        and isinstance(dashboard, dict)
+        and bool(dashboard)
+    ):
+        return (
+            "Analysis completed. Review the management dashboard below "
+            "for the key results and supporting details."
+        )
+    return answer
 
 
 def _record_ui_error(
@@ -648,6 +687,7 @@ def _clear_conversation() -> None:
     st.session_state.pending_intent = {}
     st.session_state.latest_response = None
     st.session_state.request_in_progress = False
+    st.session_state.session_id = None
 
     st.rerun()
 
@@ -816,16 +856,20 @@ def _render_dashboard(
         )
     )
 
-    _render_charts(
-        trend_data=dashboard.get(
-            "trend_data",
-            [],
-        ),
-        waterfall_data=dashboard.get(
-            "waterfall_data",
-            [],
-        ),
-    )
+    visualizations = dashboard.get("visualizations", [])
+    if isinstance(visualizations, list) and visualizations:
+        _render_related_visualizations(visualizations)
+    else:
+        _render_charts(
+            trend_data=dashboard.get(
+                "trend_data",
+                [],
+            ),
+            waterfall_data=dashboard.get(
+                "waterfall_data",
+                [],
+            ),
+        )
 
     _render_tables(
         dashboard
@@ -929,8 +973,27 @@ def _render_executive_summary(
     if not summary:
         return
 
+    summary = _shorten_management_summary(summary)
+
     st.subheader("Executive Summary")
     st.info(summary)
+
+
+def _shorten_management_summary(
+    summary: str,
+    *,
+    maximum_characters: int = 500,
+) -> str:
+    """Keep the visible executive summary concise for management review."""
+
+    if len(summary) <= maximum_characters:
+        return summary
+
+    shortened = summary[:maximum_characters].rsplit(
+        " ",
+        1,
+    )[0].rstrip(" ,;:-")
+    return f"{shortened}…"
 
 
 def _render_kpi_cards(
@@ -1088,14 +1151,24 @@ def _render_charts(
 ) -> None:
     """Render trend and variance bridge charts."""
 
-    has_trend = (
-        isinstance(trend_data, list)
-        and bool(trend_data)
+    has_trend = _has_chart_values(
+        trend_data,
+        value_fields=(
+            "actual",
+            "budget",
+            "forecast",
+            "prior_year",
+        ),
     )
 
-    has_waterfall = (
-        isinstance(waterfall_data, list)
-        and bool(waterfall_data)
+    has_waterfall = _has_chart_values(
+        waterfall_data,
+        value_fields=(
+            "value",
+            "amount",
+            "variance",
+            "effect_value",
+        ),
     )
 
     if not has_trend and not has_waterfall:
@@ -1125,6 +1198,76 @@ def _render_charts(
         _render_waterfall_chart(
             waterfall_data
         )
+
+
+def _render_related_visualizations(
+    visualizations: list[Any],
+) -> None:
+    """Render the most relevant charts supplied for the selected flow."""
+
+    usable = [
+        chart for chart in visualizations
+        if isinstance(chart, dict)
+        and isinstance(chart.get("records"), list)
+        and chart.get("records")
+        and isinstance(chart.get("value_fields"), list)
+        and chart.get("value_fields")
+    ]
+    if not usable:
+        return
+
+    st.subheader("Performance Visuals")
+    columns = st.columns(min(len(usable), 2))
+    for index, chart in enumerate(usable):
+        with columns[index % len(columns)]:
+            _render_related_visualization(chart)
+
+
+def _render_related_visualization(
+    chart: dict[str, Any],
+) -> None:
+    dataframe = _records_to_dataframe(chart["records"])
+    category_field = str(chart.get("category_field", ""))
+    value_fields = [
+        field for field in chart["value_fields"]
+        if field in dataframe.columns
+    ]
+    if (
+        dataframe.empty
+        or category_field not in dataframe.columns
+        or not value_fields
+    ):
+        return
+
+    st.markdown(f"**{chart.get('title', 'Analysis')}**")
+    chart_data = dataframe[
+        [category_field, *value_fields]
+    ].set_index(category_field)
+    if str(chart.get("chart_type", "bar")).lower() == "line":
+        st.line_chart(chart_data, use_container_width=True)
+    else:
+        st.bar_chart(chart_data, use_container_width=True)
+
+
+def _has_chart_values(
+    records: Any,
+    *,
+    value_fields: tuple[str, ...],
+) -> bool:
+    """Return whether chart records contain at least one numeric value."""
+
+    if not isinstance(records, list) or not records:
+        return False
+
+    return any(
+        isinstance(record, dict)
+        and any(
+            isinstance(record.get(field_name), (int, float))
+            and not isinstance(record.get(field_name), bool)
+            for field_name in value_fields
+        )
+        for record in records
+    )
 
 
 def _render_trend_chart(
@@ -1518,15 +1661,13 @@ def _render_item_list(
 def _render_commentary(
     commentary: Any,
 ) -> None:
-    """Render management commentary."""
+    """Render detailed management commentary in a collapsed section."""
 
     if not isinstance(
         commentary,
         dict,
     ) or not commentary:
         return
-
-    st.subheader("Management Commentary")
 
     commentary_text = (
         commentary.get("text")
@@ -1538,11 +1679,6 @@ def _render_commentary(
             "management_commentary"
         )
     )
-
-    if commentary_text:
-        st.markdown(
-            str(commentary_text)
-        )
 
     remaining_sections = {
         key: value
@@ -1562,11 +1698,16 @@ def _render_commentary(
         )
     }
 
-    if remaining_sections:
+    if commentary_text or remaining_sections:
         with st.expander(
-            "Additional commentary",
+            "Detailed management commentary",
             expanded=False,
         ):
+            if commentary_text:
+                st.markdown(
+                    str(commentary_text)
+                )
+
             for title, value in remaining_sections.items():
                 st.markdown(
                     f"**{_humanize(title)}**"
@@ -1606,8 +1747,10 @@ def _render_data_limitations(
 
 def _render_ai_answer(
     response: dict[str, Any],
+    *,
+    collapsed: bool = False,
 ) -> None:
-    """Render the grounded AI finance response."""
+    """Render the grounded AI response without duplicating dashboard content."""
 
     answer = response.get(
         "answer"
@@ -1619,6 +1762,14 @@ def _render_ai_answer(
     cleaned_answer = answer.strip()
 
     if not cleaned_answer:
+        return
+
+    if collapsed:
+        with st.expander(
+            "Detailed AI finance analysis",
+            expanded=False,
+        ):
+            st.markdown(cleaned_answer)
         return
 
     st.subheader("AI Finance Analysis")

@@ -44,6 +44,7 @@ from src.orchestrator.planner import (
     create_execution_plan,
     validate_plan_against_state,
 )
+from src.memory.memory_manager import MemoryManager
 from src.orchestrator.state import FinanceGraphState
 from src.rag.prompt_templates import PromptType
 from src.rag.rag_agent import FinanceRAGAgent
@@ -111,6 +112,12 @@ class AskServiceResult:
     dashboard: dict[str, Any] = field(default_factory=dict)
     clarification_required: bool = False
     intent: dict[str, Any] = field(default_factory=dict)
+    session_id: str | None = None
+    workflow_id: str | None = None
+    report_memory_id: str | None = None
+    agent_memory_ids: dict[str, str] = field(default_factory=dict)
+    memory_status: str = "not_started"
+    memory_error: str | None = None
 
 
 GraphExecutor = Callable[
@@ -157,6 +164,7 @@ class FinanceAskService:
         rag_agent: FinanceRAGAgent,
         data_paths: FinanceDataPaths,
         graph_executor: GraphExecutor = run_finance_graph,
+        memory_manager: MemoryManager | None = None,
     ) -> None:
         """
         Initialize the finance application service.
@@ -203,6 +211,8 @@ class FinanceAskService:
         self._rag_agent = rag_agent
         self._data_paths = data_paths
         self._graph_executor = graph_executor
+        self._memory_manager = memory_manager or MemoryManager()
+        self._conversation_context: dict[str, dict[str, Any]] = {}
 
     def ask(
         self,
@@ -211,6 +221,9 @@ class FinanceAskService:
         top_k: int | None = None,
         score_threshold: float | None = None,
         metadata_filter: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        uploaded_files: list[dict[str, Any]] | None = None,
     ) -> AskServiceResult:
         """
         Answer one natural-language finance request.
@@ -245,6 +258,19 @@ class FinanceAskService:
             question
         )
 
+        preference_result = self._handle_preference_request(
+            cleaned_question,
+            user_id=user_id,
+            session_id=session_id,
+        )
+        if preference_result is not None:
+            return preference_result
+
+        cleaned_question = self._resolve_follow_up_question(
+            cleaned_question,
+            session_id=session_id,
+        )
+
         try:
             intent = parse_finance_intent(
                 cleaned_question
@@ -262,6 +288,9 @@ class FinanceAskService:
         graph_state = self._build_graph_state(
             question=cleaned_question,
             intent=intent,
+            user_id=user_id,
+            session_id=session_id,
+            uploaded_files=uploaded_files,
         )
 
         selected_flow = str(
@@ -299,9 +328,7 @@ class FinanceAskService:
             )
 
         try:
-            graph_result = self._graph_executor(
-                graph_state
-            )
+            graph_result = self._execute_graph(graph_state)
         except Exception as exc:
             raise FinanceAskServiceError(
                 f"Finance graph execution failed: {exc}"
@@ -384,6 +411,13 @@ class FinanceAskService:
             for item in rag_result.retrieval_result.documents
         ]
 
+        resolved_session_id = graph_result.get("session_id")
+        if isinstance(resolved_session_id, str) and resolved_session_id:
+            self._conversation_context[resolved_session_id] = {
+                "selected_flow": selected_flow,
+                "filters": intent.to_filters(),
+            }
+
         return AskServiceResult(
             answer=rag_result.response,
             sources=sources,
@@ -395,13 +429,39 @@ class FinanceAskService:
             intent=self._serialize_intent(
                 intent
             ),
+            session_id=resolved_session_id,
+            workflow_id=graph_result.get("workflow_id"),
+            report_memory_id=graph_result.get("report_memory_id"),
+            agent_memory_ids=dict(
+                graph_result.get("agent_memory_ids", {})
+            ),
+            memory_status=str(
+                graph_result.get("memory_status", "not_started")
+            ),
+            memory_error=graph_result.get("memory_error"),
         )
+
+    def _execute_graph(
+        self,
+        graph_state: FinanceGraphState,
+    ) -> FinanceGraphState:
+        """Execute LangGraph with memory, preserving fake-executor support."""
+
+        if self._graph_executor is run_finance_graph:
+            return self._graph_executor(
+                graph_state,
+                memory_manager=self._memory_manager,
+            )
+        return self._graph_executor(graph_state)
 
     def _build_graph_state(
         self,
         *,
         question: str,
         intent: FinanceIntent,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        uploaded_files: list[dict[str, Any]] | None = None,
     ) -> FinanceGraphState:
         """
         Build initial LangGraph state from the parsed finance intent.
@@ -429,12 +489,20 @@ class FinanceAskService:
             "frequency": self._resolve_frequency(
                 intent
             ),
-            "rolling_window": 3,
+            "rolling_window": (
+                1
+                if selected_flow == "full"
+                and intent.period.granularity == "month"
+                else 3
+            ),
             "forecast_periods": 6,
             "scenario_name": (
                 intent.scenario_name
                 or "Management Case"
             ),
+            "user_id": user_id,
+            "session_id": session_id,
+            "uploaded_files": list(uploaded_files or []),
         }
 
         if intent.requested_kpis:
@@ -1625,4 +1693,130 @@ class FinanceAskService:
 
         return (
             f"{cleaned_text[: limit - 3]}..."
+        )
+
+    def _resolve_follow_up_question(
+        self,
+        question: str,
+        *,
+        session_id: str | None,
+    ) -> str:
+        """Resolve conversational period and flow references from the session."""
+
+        if (
+            not session_id
+            or not self._memory_manager.session_exists(session_id)
+        ):
+            return question
+        context = self._conversation_context.get(session_id)
+        if context is None:
+            context = self._memory_manager.get_workflow_context(session_id)
+        filters = context.get("filters", {})
+        if not isinstance(filters, dict):
+            filters = {}
+        period = str(filters.get("period", "")).strip()
+        previous_flow = str(context.get("selected_flow", "")).strip()
+        normalized = question.lower()
+
+        if "largest gp" in normalized and previous_flow == "gp_variance":
+            return (
+                f"Show GP% variance decomposition for {period} and explain "
+                "the largest GP% change"
+            )
+        if normalized.startswith("change it to ") and previous_flow:
+            requested_period = question[len("Change it to "):].strip()
+            flow_text = {
+                "gp_variance": "Show GP% variance decomposition",
+                "pnl": "Generate Actual vs Budget P&L",
+                "variance": "Compare actual performance against budget",
+            }.get(previous_flow, previous_flow)
+            return f"{flow_text} for {requested_period}"
+        if ("same month" in normalized or "that month" in normalized) and period:
+            return f"{question} ({period})"
+        if "previous month" in normalized and filters.get("start_date"):
+            previous = (
+                pd.Period(str(filters["start_date"])[:7], freq="M") - 1
+            ).strftime("%B %Y")
+            flow_text = (
+                "Generate Actual vs Budget P&L"
+                if previous_flow == "pnl"
+                else "Compare actual performance against budget"
+            )
+            return f"{flow_text} for {previous}"
+        return question
+
+    def _handle_preference_request(
+        self,
+        question: str,
+        *,
+        user_id: str | None,
+        session_id: str | None,
+    ) -> AskServiceResult | None:
+        """Handle persistent reporting-preference commands deterministically."""
+
+        normalized = question.strip().lower()
+        is_revenue_definition = (
+            "actual revenue mean" in normalized
+            or (
+                normalized.startswith("remember that")
+                and "actual revenue" in normalized
+            )
+        )
+        is_preference_request = (
+            "preference" in normalized
+            or is_revenue_definition
+        )
+        if not is_preference_request:
+            return None
+        resolved_user = (user_id or "streamlit-local-user").strip()
+        current = self._memory_manager.get_user_preferences(
+            resolved_user,
+            default={},
+        )
+        if (
+            "actual revenue mean" in normalized
+            and not normalized.startswith("remember ")
+        ):
+            answer = (
+                "Actual revenue means commission_amount."
+                if current.get("actual_revenue") == "commission_amount"
+                else "No saved actual-revenue definition is available."
+            )
+        elif normalized.startswith(("remember ", "update ")):
+            current = dict(current)
+            if normalized.startswith("remember that"):
+                current["actual_revenue"] = "commission_amount"
+            else:
+                current["reporting_preferences"] = question.split(
+                    ":",
+                    1,
+                )[-1].strip()
+                if "commission_amount" in normalized:
+                    current["actual_revenue"] = "commission_amount"
+            self._memory_manager.save_user_preferences(
+                resolved_user,
+                current,
+            )
+            answer = "Your reporting preferences have been saved."
+        elif normalized.startswith("forget "):
+            self._memory_manager.save_user_preferences(resolved_user, {})
+            answer = "Your saved reporting preferences have been removed."
+        else:
+            answer = (
+                "No saved reporting preferences are available."
+                if not current
+                else "Saved reporting preferences: "
+                + str(current.get("reporting_preferences", current))
+            )
+        return AskServiceResult(
+            answer=answer,
+            sources=[],
+            selected_flow="unknown",
+            execution_status="completed",
+            used_fallback=False,
+            dashboard={},
+            clarification_required=False,
+            intent={},
+            session_id=session_id,
+            memory_status="saved",
         )

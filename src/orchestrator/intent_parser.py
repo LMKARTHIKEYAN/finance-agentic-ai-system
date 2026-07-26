@@ -479,6 +479,12 @@ def _extract_comparison(
 ) -> ComparisonType:
     """Extract the requested finance comparison."""
 
+    if re.search(
+        r"\bactual\b.*\bagainst budget\b",
+        normalized_request,
+    ):
+        return "actual_vs_budget"
+
     comparison_patterns: tuple[
         tuple[ComparisonType, tuple[str, ...]],
         ...,
@@ -800,13 +806,8 @@ def _parse_range_fragments(
         end_text
     )
 
-    start_date = _parse_date_fragment(
-        cleaned_start
-    )
-
-    end_date = _parse_date_fragment(
-        cleaned_end
-    )
+    start_date = _parse_date_fragment(cleaned_start)
+    end_date = _parse_date_fragment(cleaned_end, range_end=True)
 
     if start_date is None and end_date is not None:
         start_date = _parse_date_fragment(
@@ -818,6 +819,7 @@ def _parse_range_fragments(
         end_date = _parse_date_fragment(
             cleaned_end,
             default_year=start_date.year,
+            range_end=True,
         )
 
     if (
@@ -862,6 +864,7 @@ def _parse_date_fragment(
     value: str,
     *,
     default_year: int | None = None,
+    range_end: bool = False,
 ) -> date | None:
     """Parse one date fragment inside a date range."""
 
@@ -939,6 +942,27 @@ def _parse_date_fragment(
                 named_without_year.group(1)
             ),
         )
+
+    month_only = re.search(
+        rf"\b({month_pattern})(?:\s+(20\d{{2}}))?\b",
+        cleaned_value,
+    )
+    if month_only and (
+        month_only.group(2) is not None
+        or default_year is not None
+    ):
+        year = (
+            int(month_only.group(2))
+            if month_only.group(2)
+            else int(default_year)
+        )
+        month = MONTH_NAMES[month_only.group(1)]
+        day = (
+            calendar.monthrange(year, month)[1]
+            if range_end
+            else 1
+        )
+        return date(year, month, day)
 
     return None
 

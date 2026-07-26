@@ -46,6 +46,8 @@ def ask_finance_question(
     *,
     base_url: str | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    user_id: str | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Submit a finance question to the FastAPI ``POST /ask`` route.
@@ -99,6 +101,10 @@ def ask_finance_question(
         "top_k": validated_top_k,
         "metadata_filter": dict(metadata_filter or {}),
     }
+    if user_id is not None:
+        payload["user_id"] = user_id
+    if session_id is not None:
+        payload["session_id"] = session_id
 
     endpoint = f"{_resolve_base_url(base_url)}/ask"
 
@@ -393,6 +399,8 @@ def _parse_ask_response(
         "dashboard",
         None,
     )
+    parsed_response.setdefault("session_id", None)
+    parsed_response.setdefault("memory_status", None)
 
     parsed_response.setdefault(
         "clarification_required",
@@ -557,6 +565,7 @@ def _validate_dashboard_response(
         "kpi_cards",
         "trend_data",
         "waterfall_data",
+        "visualizations",
         "recommendations",
         "risks",
         "data_limitations",

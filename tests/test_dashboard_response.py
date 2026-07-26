@@ -55,11 +55,15 @@ def sample_finance_analysis() -> dict:
                     "vehicle_category": "2W",
                     "completed_orders": 1_100,
                     "total_revenue": 170_000,
+                    "budget_orders": 1_100,
+                    "budget_revenue": 170_000,
                 },
                 {
                     "vehicle_category": "3W",
                     "completed_orders": 850,
                     "total_revenue": 250_000,
+                    "budget_orders": 850,
+                    "budget_revenue": 250_000,
                 },
             ],
             "period_summary": [
@@ -254,8 +258,61 @@ def test_build_dashboard_response_creates_kpi_table(
     assert result.kpi_table is not None
     assert result.kpi_table.title == "KPI Summary"
     assert len(result.kpi_table.rows) == len(result.kpi_cards)
-    assert "KPI" in result.kpi_table.columns
-    assert "Variance" in result.kpi_table.columns
+    assert result.kpi_table.columns == [
+        "KPI",
+        "Actual",
+        "Unit",
+    ]
+    assert set(result.kpi_table.rows[0]) == {
+        "KPI",
+        "Actual",
+        "Unit",
+    }
+
+
+@pytest.mark.parametrize(
+    ("flow", "expected_titles"),
+    [
+        (
+            "kpi",
+            [
+                "Completed Orders by Vehicle Category",
+                "Commission Revenue by Vehicle Category",
+            ],
+        ),
+        (
+            "budget",
+            [
+                "Budget Orders by Vehicle Category",
+                "Budget Revenue by Vehicle Category",
+            ],
+        ),
+        (
+            "variance",
+            [
+                "Actual vs Budget Revenue by Vehicle Category",
+                "Revenue Variance by Vehicle Category",
+            ],
+        ),
+        (
+            "forecast",
+            ["Forecast Revenue Trend"],
+        ),
+    ],
+)
+def test_build_dashboard_response_creates_related_visualizations(
+    sample_finance_analysis: dict,
+    flow: str,
+    expected_titles: list[str],
+) -> None:
+    result = build_dashboard_response(
+        selected_flow=flow,
+        finance_analysis=sample_finance_analysis,
+    )
+
+    assert [
+        chart.title for chart in result.visualizations
+    ] == expected_titles
 
 
 def test_build_dashboard_response_creates_variance_table(

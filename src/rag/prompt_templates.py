@@ -301,13 +301,15 @@ KPI_EXPLANATION_TEMPLATE = PromptTemplate(
     instructions="""
 Explain the supplied KPI results for management decision-making.
 
-Identify the reporting period, comparison basis, actual value, target or
-benchmark, variance or status, strongest and weakest KPIs, material trends,
-relationships between KPIs, supported drivers, anomalies, and management
-attention areas.
+Identify the reporting period, actual KPI values, strongest and weakest KPIs,
+material trends, relationships between KPIs, supported drivers, anomalies,
+and management attention areas.
 
 Use KPI results as the primary evidence and supporting agent outputs only when
 they directly explain a KPI movement. Do not calculate missing KPI values.
+Keep the KPI scorecard concise. Include only KPI, Actual Value, Unit, and a
+short Management Interpretation. Do not include Target, Benchmark, Variance,
+Variance Percentage, or Status columns.
 """.strip(),
     output_format="""
 Return:

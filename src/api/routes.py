@@ -132,11 +132,16 @@ def ask_finance_question(
     """
 
     try:
-        result = service.ask(
-            question=request.question,
-            top_k=request.top_k,
-            metadata_filter=request.metadata_filter,
-        )
+        ask_kwargs: dict[str, Any] = {
+            "question": request.question,
+            "top_k": request.top_k,
+            "metadata_filter": request.metadata_filter,
+        }
+        if request.user_id is not None:
+            ask_kwargs["user_id"] = request.user_id
+        if request.session_id is not None:
+            ask_kwargs["session_id"] = request.session_id
+        result = service.ask(**ask_kwargs)
 
     except (TypeError, ValueError) as exc:
         raise HTTPException(
@@ -145,9 +150,19 @@ def ask_finance_question(
         ) from exc
 
     except FinanceAskServiceError as exc:
+        message = str(exc)
+        client_data_error = (
+            "No matching records were found" in message
+            or "no comparable" in message.lower()
+            or "no common months" in message.lower()
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            status_code=(
+                status.HTTP_400_BAD_REQUEST
+                if client_data_error
+                else status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=message,
         ) from exc
 
     except Exception as exc:
@@ -173,6 +188,8 @@ def ask_finance_question(
             result.clarification_required
         ),
         intent=result.intent,
+        session_id=getattr(result, "session_id", None),
+        memory_status=getattr(result, "memory_status", None),
     )
 
 

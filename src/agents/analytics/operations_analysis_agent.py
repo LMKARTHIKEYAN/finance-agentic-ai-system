@@ -23,6 +23,7 @@ class OperationsAnalysisResult:
     cancellation_percentage: float
     total_revenue: float
     average_order_value: float
+    total_commission_revenue: float = 0.0
     vehicle_summary: list[dict[str, Any]] = field(default_factory=list)
     cluster_summary: list[dict[str, Any]] = field(default_factory=list)
     period_summary: list[dict[str, Any]] = field(default_factory=list)
@@ -84,6 +85,9 @@ class OperationsAnalysisAgent:
             ),
             total_revenue=total_revenue,
             average_order_value=average_order_value,
+            total_commission_revenue=self._calculate_commission_revenue(
+                completed_data
+            ),
             vehicle_summary=self._calculate_dimension_summary(
                 filtered_data, "vehicle_category"
             ),
@@ -196,6 +200,14 @@ class OperationsAnalysisAgent:
     def _calculate_total_revenue(self, completed_data: pd.DataFrame) -> float:
         return round(float(completed_data["fare"].sum()), 2)
 
+    @staticmethod
+    def _calculate_commission_revenue(
+        completed_data: pd.DataFrame,
+    ) -> float:
+        if "commission_amount" not in completed_data.columns:
+            return 0.0
+        return round(float(completed_data["commission_amount"].sum()), 2)
+
     def _calculate_average_order_value(
         self,
         total_revenue: float,
@@ -245,6 +257,9 @@ class OperationsAnalysisAgent:
                         total_orders,
                     ),
                     "total_revenue": total_revenue,
+                    "total_commission_revenue": (
+                        self._calculate_commission_revenue(completed_data)
+                    ),
                     "average_order_value": self._calculate_average_order_value(
                         total_revenue,
                         completed_orders,
@@ -293,6 +308,9 @@ class OperationsAnalysisAgent:
                         total_orders,
                     ),
                     "total_revenue": total_revenue,
+                    "total_commission_revenue": (
+                        self._calculate_commission_revenue(completed_data)
+                    ),
                     "average_order_value": self._calculate_average_order_value(
                         total_revenue,
                         completed_orders,

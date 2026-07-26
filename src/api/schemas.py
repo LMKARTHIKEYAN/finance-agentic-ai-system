@@ -52,6 +52,9 @@ class AskRequest(BaseModel):
         description="Optional metadata filters for document retrieval.",
     )
 
+    user_id: str | None = None
+    session_id: str | None = None
+
 
 class SourceResponse(BaseModel):
     """
@@ -291,6 +294,17 @@ class DashboardWaterfallPoint(BaseModel):
     unit: str | None = None
 
 
+class DashboardVisualization(BaseModel):
+    """A flow-specific chart rendered by the management dashboard."""
+
+    title: str
+    chart_type: str
+    category_field: str
+    value_fields: list[str] = Field(default_factory=list)
+    records: list[dict[str, Any]] = Field(default_factory=list)
+    unit: str | None = None
+
+
 class DashboardRecommendation(BaseModel):
     """
     A management recommendation displayed by the dashboard.
@@ -478,6 +492,10 @@ class DashboardPayload(BaseModel):
         default_factory=list
     )
 
+    visualizations: list[DashboardVisualization] = Field(
+        default_factory=list
+    )
+
     recommendations: list[DashboardRecommendation] = Field(
         default_factory=list
     )
@@ -565,3 +583,10 @@ class AskResponse(BaseModel):
     used_fallback: bool = False
 
     dashboard: DashboardPayload | None = None
+
+    session_id: str | None = None
+    memory_status: str | None = None
+    clarification_required: bool = False
+    intent: FinanceIntentResponse = Field(
+        default_factory=FinanceIntentResponse
+    )
