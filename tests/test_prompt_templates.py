@@ -38,6 +38,17 @@ from src.rag.prompt_templates import (
 )
 
 
+def test_system_prompt_enforces_autonomous_review_controls() -> None:
+    from src.rag.prompt_templates import DEFAULT_SYSTEM_PROMPT
+
+    prompt = DEFAULT_SYSTEM_PROMPT.lower()
+    assert "reviewer decision" in prompt
+    assert "failed reconciliation" in prompt
+    assert "evidence identifiers" in prompt
+    assert "raw dataframes" in prompt
+    assert "human approval" in prompt
+
+
 @dataclass
 class SampleAnalysis:
     """Sample dataclass used for serialization tests."""

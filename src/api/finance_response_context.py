@@ -290,6 +290,7 @@ class FinanceResponseContextBuilder:
         self,
         selected_flow: str,
         finance_analysis: Mapping[str, Any],
+        hybrid_metadata: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build a structured, flow-aware finance response context.
 
@@ -314,6 +315,11 @@ class FinanceResponseContextBuilder:
 
         normalized_flow = self._normalize_flow(selected_flow)
         validated_analysis = self._validate_analysis(finance_analysis)
+        if hybrid_metadata is not None and not isinstance(
+            hybrid_metadata,
+            Mapping,
+        ):
+            raise TypeError("hybrid_metadata must be a mapping or None.")
 
         primary_keys = self._PRIMARY_RESULTS_BY_FLOW.get(
             normalized_flow,
@@ -357,7 +363,7 @@ class FinanceResponseContextBuilder:
             if key not in available_keys
         ]
 
-        return {
+        result = {
             "context_version": "1.0",
             "selected_flow": normalized_flow,
             "response_instruction": (
@@ -377,6 +383,21 @@ class FinanceResponseContextBuilder:
                 "has_supporting_analysis": bool(supporting_analysis),
             },
         }
+        if hybrid_metadata is not None:
+            result["hybrid_execution"] = {
+                key: deepcopy(hybrid_metadata[key])
+                for key in (
+                    "execution_mode",
+                    "autonomous_status",
+                    "fallback_used",
+                    "fallback_reason",
+                    "review_decision",
+                    "evidence_ids",
+                    "usage",
+                )
+                if key in hybrid_metadata
+            }
+        return result
 
     @staticmethod
     def _normalize_flow(selected_flow: str) -> str:
@@ -477,10 +498,12 @@ class FinanceResponseContextBuilder:
 def build_finance_response_context(
     selected_flow: str,
     finance_analysis: Mapping[str, Any],
+    hybrid_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Convenience function for building structured finance response context."""
 
     return FinanceResponseContextBuilder().build(
         selected_flow=selected_flow,
         finance_analysis=finance_analysis,
+        hybrid_metadata=hybrid_metadata,
     )

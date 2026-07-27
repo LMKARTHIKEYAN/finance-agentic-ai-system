@@ -31,6 +31,8 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from src.autonomous.complexity_classifier import ComplexityClassifier
+from src.autonomous.schemas import AutonomousExecutionResult
 from src.api.dashboard_response import build_dashboard_response
 from src.api.finance_response_context import (
     build_finance_response_context,
@@ -48,6 +50,7 @@ from src.orchestrator.planner import (
 from src.orchestrator.state import FinanceGraphState
 from src.rag.prompt_templates import PromptType
 from src.rag.rag_agent import FinanceRAGAgent
+from src.config.settings import settings
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +58,37 @@ logger = logging.getLogger(__name__)
 
 class FinanceAskServiceError(RuntimeError):
     """Raised when the service cannot complete a finance request."""
+
+
+def _autonomous_metadata(
+    result: AutonomousExecutionResult,
+) -> dict[str, Any]:
+    if not isinstance(result, AutonomousExecutionResult):
+        raise TypeError(
+            "autonomous_executor must return AutonomousExecutionResult."
+        )
+    return {
+        "fallback_used": result.status == "fallback",
+        "fallback_reason": result.fallback_reason,
+        "review_decision": (
+            result.review_result.decision
+            if result.review_result is not None
+            else None
+        ),
+        "evidence_ids": [
+            item.evidence_id for item in result.evidence
+        ],
+        "usage": result.usage.model_dump(mode="json"),
+    }
+
+
+def _with_hybrid_metadata(
+    result: "AskServiceResult",
+    **metadata: Any,
+) -> "AskServiceResult":
+    values = asdict(result)
+    values["hybrid_metadata"] = metadata
+    return AskServiceResult(**values)
 
 
 @dataclass(frozen=True)
@@ -117,9 +151,14 @@ class AskServiceResult:
     agent_memory_ids: dict[str, str] = field(default_factory=dict)
     memory_status: str = "not_started"
     memory_error: str | None = None
+    hybrid_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 GraphExecutor = Callable[..., FinanceGraphState]
+AutonomousExecutor = Callable[
+    [str, AskServiceResult],
+    AutonomousExecutionResult,
+]
 
 
 class FinanceAskService:
@@ -161,6 +200,10 @@ class FinanceAskService:
         data_paths: FinanceDataPaths,
         graph_executor: GraphExecutor = run_finance_graph,
         memory_manager: MemoryManager | None = None,
+        complexity_classifier: ComplexityClassifier | None = None,
+        autonomous_executor: AutonomousExecutor | None = None,
+        autonomous_enabled: bool | None = None,
+        autonomous_shadow_mode: bool | None = None,
     ) -> None:
         """
         Initialize the finance application service.
@@ -216,8 +259,117 @@ class FinanceAskService:
         self._data_paths = data_paths
         self._graph_executor = graph_executor
         self._memory_manager = memory_manager
+        self._complexity_classifier = (
+            complexity_classifier or ComplexityClassifier()
+        )
+        if autonomous_executor is not None and not callable(
+            autonomous_executor
+        ):
+            raise TypeError("autonomous_executor must be callable.")
+        self._autonomous_executor = autonomous_executor
+        self._autonomous_enabled = (
+            settings.AUTONOMOUS_ENABLED
+            if autonomous_enabled is None
+            else autonomous_enabled
+        )
+        self._autonomous_shadow_mode = (
+            settings.AUTONOMOUS_SHADOW_MODE
+            if autonomous_shadow_mode is None
+            else autonomous_shadow_mode
+        )
+        if not isinstance(self._autonomous_enabled, bool):
+            raise TypeError("autonomous_enabled must be a boolean.")
+        if not isinstance(self._autonomous_shadow_mode, bool):
+            raise TypeError(
+                "autonomous_shadow_mode must be a boolean."
+            )
 
     def ask(
+        self,
+        question: str,
+        **kwargs: Any,
+    ) -> AskServiceResult:
+        """Route safely between deterministic and autonomous execution."""
+
+        deterministic = self._ask_deterministic(question, **kwargs)
+        try:
+            decision = self._complexity_classifier.classify(question)
+        except Exception:
+            return _with_hybrid_metadata(
+                deterministic,
+                execution_mode="deterministic",
+                autonomous_status="classifier_fallback",
+                fallback_used=True,
+                fallback_reason="Complexity classification failed.",
+            )
+        if decision.execution_mode != "autonomous":
+            return _with_hybrid_metadata(
+                deterministic,
+                execution_mode="deterministic",
+                autonomous_status="not_selected",
+            )
+        if self._autonomous_executor is None:
+            return _with_hybrid_metadata(
+                deterministic,
+                execution_mode="deterministic",
+                autonomous_status="unavailable",
+                fallback_used=True,
+                fallback_reason="Autonomous executor is unavailable.",
+            )
+        if not self._autonomous_enabled and not self._autonomous_shadow_mode:
+            return _with_hybrid_metadata(
+                deterministic,
+                execution_mode="deterministic",
+                autonomous_status="disabled",
+            )
+        try:
+            autonomous = self._autonomous_executor(question, deterministic)
+        except Exception:
+            return _with_hybrid_metadata(
+                deterministic,
+                execution_mode="deterministic",
+                autonomous_status="failed",
+                fallback_used=True,
+                fallback_reason="Autonomous execution failed.",
+            )
+        metadata = _autonomous_metadata(autonomous)
+        if self._autonomous_shadow_mode:
+            return _with_hybrid_metadata(
+                deterministic,
+                execution_mode="deterministic",
+                autonomous_status=f"shadow_{autonomous.status}",
+                **metadata,
+            )
+        if (
+            autonomous.status == "completed"
+            and autonomous.management_response is not None
+        ):
+            return AskServiceResult(
+                **{
+                    **asdict(deterministic),
+                    "answer": autonomous.management_response.answer,
+                    "execution_status": "completed",
+                    "hybrid_metadata": {
+                        "execution_mode": "autonomous",
+                        "autonomous_status": autonomous.status,
+                        **metadata,
+                    },
+                }
+            )
+        metadata.update(
+            {
+                "execution_mode": "deterministic",
+                "autonomous_status": autonomous.status,
+                "fallback_used": True,
+                "fallback_reason": (
+                    autonomous.fallback_reason
+                    or "Autonomous result was not approved."
+                ),
+            }
+        )
+        return _with_hybrid_metadata(deterministic, **metadata)
+
+    def _ask_deterministic(
         self,
         question: str,
         *,

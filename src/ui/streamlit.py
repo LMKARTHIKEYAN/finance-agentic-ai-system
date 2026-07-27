@@ -745,6 +745,9 @@ def _render_response_metadata(
         ),
     )
 
+    for level, message in _build_hybrid_status_messages(response):
+        getattr(st, level)(message)
+
     if st.session_state.show_intent_details:
         intent = response.get(
             "intent",
@@ -759,6 +762,53 @@ def _render_response_metadata(
                 _render_intent(
                     intent
                 )
+
+
+def _build_hybrid_status_messages(
+    response: dict[str, Any],
+) -> list[tuple[str, str]]:
+    """Build concise autonomous review and reconciliation notices."""
+
+    metadata = response.get("hybrid_metadata")
+    if not isinstance(metadata, dict):
+        return []
+    messages: list[tuple[str, str]] = []
+    execution_mode = metadata.get("execution_mode")
+    status = metadata.get("autonomous_status")
+    if execution_mode or status:
+        messages.append(
+            (
+                "caption",
+                "Hybrid execution: "
+                f"{_humanize(execution_mode or 'deterministic')} / "
+                f"{_humanize(status or 'not selected')}",
+            )
+        )
+    review = metadata.get("review_decision")
+    if review:
+        messages.append(
+            ("success", f"Reviewer status: {_humanize(review)}")
+        )
+    if metadata.get("fallback_used"):
+        reason = metadata.get("fallback_reason")
+        messages.append(
+            (
+                "warning",
+                "Deterministic fallback used."
+                + (f" {reason}" if reason else ""),
+            )
+        )
+    warnings = metadata.get("reconciliation_warnings", [])
+    if isinstance(warnings, list):
+        for warning in warnings:
+            if isinstance(warning, str) and warning.strip():
+                messages.append(
+                    (
+                        "warning",
+                        f"Reconciliation warning: {warning.strip()}",
+                    )
+                )
+    return messages
 
 
 def _render_intent(

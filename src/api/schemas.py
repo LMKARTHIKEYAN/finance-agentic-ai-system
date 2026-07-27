@@ -547,6 +547,18 @@ class FinanceIntentResponse(BaseModel):
     )
 
 
+class HybridExecutionMetadata(BaseModel):
+    """Safe public metadata describing hybrid workflow execution."""
+
+    execution_mode: str = "deterministic"
+    autonomous_status: str = "not_selected"
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    review_decision: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    usage: dict[str, Any] = Field(default_factory=dict)
+
+
 class AskResponse(BaseModel):
     """
     Response returned by the POST /ask endpoint.
@@ -590,3 +602,5 @@ class AskResponse(BaseModel):
     intent: FinanceIntentResponse = Field(
         default_factory=FinanceIntentResponse
     )
+
+    hybrid_metadata: HybridExecutionMetadata | None = None

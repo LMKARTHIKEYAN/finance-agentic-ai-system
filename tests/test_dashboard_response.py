@@ -632,6 +632,99 @@ def test_build_dashboard_response_uses_selected_kpis() -> None:
     assert result.kpi_cards[1].formatted_value == "93.50%"
 
 
+def test_autonomous_evidence_populates_all_finance_displays() -> None:
+    finance_analysis = {
+        "autonomous_context": {
+            "evidence": [
+                {
+                    "result_type": "kpi",
+                    "compact_payload": {
+                        "selected_kpis": [
+                            {
+                                "kpi": "revenue",
+                                "display_name": "Revenue",
+                                "value": 500_000,
+                                "unit": "currency",
+                            }
+                        ]
+                    },
+                },
+                {
+                    "result_type": "revenue_variance",
+                    "compact_payload": {
+                        "actual_revenue": 500_000,
+                        "budget_revenue": 480_000,
+                        "revenue_variance": 20_000,
+                    },
+                },
+                {
+                    "result_type": "pnl",
+                    "compact_payload": {
+                        "variance_pnl": [
+                            {
+                                "Line Item": "Net Profit",
+                                "Actual": 75_000,
+                                "Budget": 60_000,
+                                "Variance": 15_000,
+                            }
+                        ]
+                    },
+                },
+                {
+                    "result_type": "gp_decomposition",
+                    "compact_payload": {
+                        "product_level": [{"category": "A"}],
+                        "portfolio_level": {
+                            "budget_gp_percentage": 30,
+                            "actual_gp_percentage": 35,
+                        },
+                    },
+                },
+            ],
+            "review_result": {
+                "decision": "approved_with_caveats",
+                "required_caveats": ("Limited period coverage.",),
+            },
+            "reconciliation_result": {
+                "warnings": ("One excluded category.",),
+                "checks": [],
+            },
+        }
+    }
+
+    kpi = build_dashboard_response(
+        selected_flow="kpi",
+        finance_analysis=finance_analysis,
+    )
+    pnl = build_dashboard_response(
+        selected_flow="pnl",
+        finance_analysis=finance_analysis,
+    )
+    variance = build_dashboard_response(
+        selected_flow="variance",
+        finance_analysis=finance_analysis,
+    )
+    gp = build_dashboard_response(
+        selected_flow="gp_variance",
+        finance_analysis=finance_analysis,
+    )
+
+    assert kpi.kpi_cards[0].key == "revenue"
+    revenue_row = next(
+        row
+        for row in variance.variance_table.rows
+        if row["Metric"] == "Revenue"
+    )
+    assert revenue_row["Variance"] == 20_000
+    assert pnl.variance_table.title == "Actual vs Budget P&L"
+    assert gp.category_table.title == "Product Level Analysis"
+    assert gp.variance_table.title == "Portfolio Level Analysis"
+    limitations = " ".join(gp.data_limitations)
+    assert "approved_with_caveats" in limitations
+    assert "Limited period coverage" in limitations
+    assert "One excluded category" in limitations
+
+
 def test_build_dashboard_response_rejects_non_string_flow() -> None:
     """Selected flow must be a string."""
 

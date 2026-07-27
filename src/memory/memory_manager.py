@@ -28,6 +28,7 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from src.autonomous.schemas import AutonomousExecutionResult
 from src.memory.long_term_memory import (
     LongTermMemory,
     LongTermMemoryEntry,
@@ -176,6 +177,7 @@ class MemoryManager:
     AGENT_RESULT_NAMESPACE = "agent-results"
     WORKFLOW_NAMESPACE = "workflow-history"
     USER_PREFERENCE_NAMESPACE = "user-preferences"
+    SESSION_AUTONOMOUS_KEY = "autonomous_execution_context"
 
     def __init__(
         self,
@@ -1510,6 +1512,110 @@ class MemoryManager:
             self._session_memory
             .cleanup_expired_sessions()
         )
+
+    def save_autonomous_execution(
+        self,
+        *,
+        session_id: str,
+        result: AutonomousExecutionResult,
+        reporting_scope: dict[str, Any] | None = None,
+        memory_key: str | None = None,
+        enabled: bool = True,
+    ) -> str | None:
+        """Store safe session metadata and persist only reviewed outcomes."""
+
+        if not isinstance(enabled, bool):
+            raise TypeError("enabled must be a boolean.")
+        if not enabled:
+            return None
+        if not isinstance(result, AutonomousExecutionResult):
+            raise TypeError(
+                "result must be AutonomousExecutionResult."
+            )
+        review = result.review_result
+        trusted = (
+            result.status == "completed"
+            and result.management_response is not None
+            and review is not None
+            and review.decision
+            in {"approved", "approved_with_caveats"}
+        )
+        session_context = {
+            "execution_mode": "autonomous",
+            "autonomous_status": result.status,
+            "trusted": trusted,
+            "reporting_scope": deepcopy(reporting_scope or {}),
+            "review_decision": (
+                review.decision if review is not None else None
+            ),
+            "required_caveats": (
+                list(review.required_caveats)
+                if review is not None
+                else []
+            ),
+            "reconciliation_passed": (
+                result.reconciliation_result.passed
+                if result.reconciliation_result is not None
+                else None
+            ),
+            "reconciliation_warnings": (
+                list(result.reconciliation_result.warnings)
+                if result.reconciliation_result is not None
+                else []
+            ),
+            "evidence_ids": [
+                item.evidence_id for item in result.evidence
+            ],
+            "selected_analysis_types": sorted(
+                {item.result_type for item in result.evidence}
+            ),
+            "usage": result.usage.model_dump(mode="json"),
+            "fallback_reason": result.fallback_reason,
+        }
+        self._session_memory.set_autonomous_context(
+            session_id,
+            session_context,
+        )
+        if not trusted:
+            return None
+
+        summary = {
+            **session_context,
+            "evidence_sources": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "source": item.source,
+                    "result_type": item.result_type,
+                }
+                for item in result.evidence
+            ],
+            "management_answer": result.management_response.answer,
+        }
+        resolved_key = (
+            memory_key.strip()
+            if isinstance(memory_key, str) and memory_key.strip()
+            else f"autonomous-{uuid4()}"
+        )
+        return self._long_term_memory.save_autonomous_summary(
+            key=resolved_key,
+            summary=summary,
+        )
+
+    def get_autonomous_session_context(
+        self,
+        session_id: str,
+    ) -> dict[str, Any]:
+        """Restore safe autonomous context for a follow-up request."""
+
+        return self._session_memory.get_autonomous_context(session_id)
+
+    def get_autonomous_history(
+        self,
+        memory_key: str,
+    ) -> dict[str, Any]:
+        """Load one reviewed autonomous outcome from persistent memory."""
+
+        return self._long_term_memory.get_autonomous_summary(memory_key)
 
     def close(self) -> None:
         """

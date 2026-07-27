@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Protocol, Sequence
 
+import pandas as pd
+
 from src.rag.prompt_templates import (
     PromptMessages,
     PromptTemplateError,
@@ -207,6 +209,7 @@ class RAGRequest:
     top_k: int | None = None
     score_threshold: float | None = None
     additional_instructions: str | None = None
+    autonomous_context: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         user_request = _validate_required_text(
@@ -238,6 +241,12 @@ class RAGRequest:
             raise TypeError(
                 "metadata_filter must be a dictionary."
             )
+        if self.autonomous_context is not None:
+            if not isinstance(self.autonomous_context, Mapping):
+                raise TypeError(
+                    "autonomous_context must be a mapping or None."
+                )
+            _reject_dataframe_values(self.autonomous_context)
 
         if self.top_k is not None:
             if isinstance(self.top_k, bool) or not isinstance(
@@ -292,6 +301,15 @@ class RAGRequest:
             self,
             "additional_instructions",
             additional_instructions or None,
+        )
+        object.__setattr__(
+            self,
+            "autonomous_context",
+            (
+                copy.deepcopy(dict(self.autonomous_context))
+                if self.autonomous_context is not None
+                else None
+            ),
         )
 
 
@@ -639,6 +657,7 @@ class FinanceRAGAgent:
         *,
         user_request: str | None = None,
         finance_analysis: Any = None,
+        autonomous_context: Mapping[str, Any] | None = None,
         prompt_type: PromptType | str | None = None,
         retrieval_query: str | None = None,
         metadata_filter: Mapping[str, Any] | None = None,
@@ -657,6 +676,7 @@ class FinanceRAGAgent:
             request=request,
             user_request=user_request,
             finance_analysis=finance_analysis,
+            autonomous_context=autonomous_context,
             prompt_type=prompt_type,
             retrieval_query=retrieval_query,
             metadata_filter=metadata_filter,
@@ -716,7 +736,10 @@ class FinanceRAGAgent:
                 resolved_prompt_type,
                 user_request=resolved_request.user_request,
                 finance_analysis=(
-                    resolved_request.finance_analysis
+                    _merge_autonomous_context(
+                        resolved_request.finance_analysis,
+                        resolved_request.autonomous_context,
+                    )
                 ),
                 retrieved_context=retrieval_result.context,
                 additional_instructions=(
@@ -792,6 +815,7 @@ class FinanceRAGAgent:
         user_request: str,
         finance_analysis: Any,
         *,
+        autonomous_context: Mapping[str, Any] | None = None,
         prompt_type: PromptType | str | None = None,
         metadata_filter: Mapping[str, Any] | None = None,
     ) -> str:
@@ -800,6 +824,7 @@ class FinanceRAGAgent:
         result = self.run(
             user_request=user_request,
             finance_analysis=finance_analysis,
+            autonomous_context=autonomous_context,
             prompt_type=prompt_type,
             metadata_filter=metadata_filter,
         )
@@ -812,6 +837,7 @@ class FinanceRAGAgent:
         request: RAGRequest | None,
         user_request: str | None,
         finance_analysis: Any,
+        autonomous_context: Mapping[str, Any] | None,
         prompt_type: PromptType | str | None,
         retrieval_query: str | None,
         metadata_filter: Mapping[str, Any] | None,
@@ -831,6 +857,7 @@ class FinanceRAGAgent:
                 top_k,
                 score_threshold,
                 additional_instructions,
+                autonomous_context,
             )
         ) or finance_analysis is not None
 
@@ -870,6 +897,7 @@ class FinanceRAGAgent:
         return RAGRequest(
             user_request=user_request,
             finance_analysis=finance_analysis,
+            autonomous_context=autonomous_context,
             prompt_type=prompt_type,
             retrieval_query=retrieval_query,
             metadata_filter=resolved_metadata_filter,
@@ -977,6 +1005,38 @@ def build_deterministic_rag_response(
     return DeterministicResponseGenerator().generate(
         messages
     )
+
+
+def _merge_autonomous_context(
+    finance_analysis: Any,
+    autonomous_context: Mapping[str, Any] | None,
+) -> Any:
+    """Attach compact autonomous controls without changing finance values."""
+
+    if autonomous_context is None:
+        return finance_analysis
+    _reject_dataframe_values(autonomous_context)
+    if isinstance(finance_analysis, Mapping):
+        merged = copy.deepcopy(dict(finance_analysis))
+    else:
+        merged = {"deterministic_analysis": copy.deepcopy(finance_analysis)}
+    merged["autonomous_context"] = copy.deepcopy(
+        dict(autonomous_context)
+    )
+    return merged
+
+
+def _reject_dataframe_values(value: Any) -> None:
+    if isinstance(value, pd.DataFrame):
+        raise TypeError(
+            "autonomous_context cannot contain DataFrames."
+        )
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _reject_dataframe_values(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_dataframe_values(item)
 
 
 def summarize_rag_result(

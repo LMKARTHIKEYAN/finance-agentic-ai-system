@@ -39,6 +39,8 @@ from threading import RLock
 from typing import Any, Generator
 from uuid import uuid4
 
+import pandas as pd
+
 
 def _utc_now() -> datetime:
     """
@@ -522,6 +524,46 @@ class LongTermMemory:
             )
 
         return self._row_to_entry(row)
+
+    def save_autonomous_summary(
+        self,
+        *,
+        key: str,
+        summary: dict[str, Any],
+        overwrite: bool = True,
+    ) -> str:
+        """Persist only a reviewed, compact autonomous summary."""
+
+        safe_summary = _validate_autonomous_summary(summary)
+        decision = safe_summary.get("review_decision")
+        if decision not in {"approved", "approved_with_caveats"}:
+            raise ValueError(
+                "only reviewed autonomous summaries can be persisted."
+            )
+        return self.save(
+            namespace="autonomous-reports",
+            key=key,
+            value=safe_summary,
+            metadata={
+                "execution_mode": safe_summary.get("execution_mode"),
+                "review_decision": decision,
+            },
+            tags=[
+                "autonomous",
+                "reviewed",
+                str(decision),
+            ],
+            overwrite=overwrite,
+        )
+
+    def get_autonomous_summary(
+        self,
+        key: str,
+    ) -> dict[str, Any]:
+        """Load one reviewed autonomous summary by business key."""
+
+        entry = self.get_by_key("autonomous-reports", key)
+        return deepcopy(entry.value)
 
     def get_by_key(
         self,
@@ -1773,3 +1815,42 @@ class LongTermMemory:
             )
 
         return offset
+
+
+def _validate_autonomous_summary(
+    summary: object,
+) -> dict[str, Any]:
+    """Reject row-level and sensitive autonomous persistence fields."""
+
+    if not isinstance(summary, dict):
+        raise TypeError("autonomous summary must be a dictionary.")
+    forbidden = {
+        "api_key",
+        "openai_api_key",
+        "prompt",
+        "messages",
+        "raw_dataframe",
+        "dataframe",
+        "exception",
+        "traceback",
+    }
+
+    def validate(value: Any) -> None:
+        if isinstance(value, pd.DataFrame):
+            raise TypeError(
+                "autonomous memory cannot contain DataFrames."
+            )
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if str(key).strip().lower() in forbidden:
+                    raise ValueError(
+                        f"sensitive autonomous field is not allowed: {key}."
+                    )
+                validate(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                validate(item)
+
+    validate(summary)
+    json.dumps(summary)
+    return deepcopy(summary)

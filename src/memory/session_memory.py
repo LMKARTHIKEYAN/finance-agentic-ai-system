@@ -25,6 +25,20 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+import pandas as pd
+
+
+AUTONOMOUS_CONTEXT_KEY = "autonomous_execution_context"
+_SENSITIVE_AUTONOMOUS_KEYS = {
+    "api_key",
+    "openai_api_key",
+    "prompt",
+    "messages",
+    "raw_dataframe",
+    "dataframe",
+    "exception",
+    "traceback",
+}
 
 def _utc_now() -> datetime:
     """
@@ -621,6 +635,35 @@ class SessionMemory:
             self._touch_session(session)
             return resolved_key in session.entries
 
+    def set_autonomous_context(
+        self,
+        session_id: str,
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Store safe temporary autonomous metadata for follow-ups."""
+
+        safe_context = _validate_autonomous_payload(context)
+        self.set(
+            session_id,
+            AUTONOMOUS_CONTEXT_KEY,
+            safe_context,
+            metadata={"trusted": False, "kind": "autonomous"},
+        )
+        return deepcopy(safe_context)
+
+    def get_autonomous_context(
+        self,
+        session_id: str,
+    ) -> dict[str, Any]:
+        """Return an isolated copy of saved autonomous session metadata."""
+
+        value = self.get(
+            session_id,
+            AUTONOMOUS_CONTEXT_KEY,
+            {},
+        )
+        return value if isinstance(value, dict) else {}
+
     def update_session_metadata(
         self,
         session_id: str,
@@ -812,3 +855,30 @@ class SessionMemory:
             )
 
         return normalized
+
+
+def _validate_autonomous_payload(
+    payload: object,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise TypeError("autonomous context must be a dictionary.")
+
+    def validate(value: Any, path: str = "") -> None:
+        if isinstance(value, pd.DataFrame):
+            raise TypeError(
+                "autonomous memory cannot contain DataFrames."
+            )
+        if isinstance(value, dict):
+            for key, item in value.items():
+                normalized = str(key).strip().lower()
+                if normalized in _SENSITIVE_AUTONOMOUS_KEYS:
+                    raise ValueError(
+                        f"sensitive autonomous field is not allowed: {key}."
+                    )
+                validate(item, f"{path}.{key}")
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                validate(item, path)
+
+    validate(payload)
+    return deepcopy(payload)

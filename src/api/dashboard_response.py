@@ -18,6 +18,7 @@ This module must not:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from copy import deepcopy
 from numbers import Real
 from typing import Any
 
@@ -80,6 +81,9 @@ def build_dashboard_response(
     if not isinstance(finance_analysis, dict):
         raise TypeError("finance_analysis must be a dictionary.")
 
+    finance_analysis = _merge_autonomous_dashboard_context(
+        finance_analysis
+    )
     normalized_flow = selected_flow.strip().lower() or "unknown"
 
     operations_result = _get_mapping(
@@ -138,11 +142,14 @@ def build_dashboard_response(
     variance_table = _build_variance_table(
         variance_result
     )
-    if gp_variance_result:
+    if (
+        gp_variance_result
+        and normalized_flow in {"gp_variance", "full"}
+    ):
         variance_table = _build_gp_variance_portfolio_table(
             gp_variance_result
         )
-    if pnl_result:
+    if pnl_result and normalized_flow in {"pnl", "full"}:
         variance_table = _build_pnl_comparison_table(pnl_result)
 
     category_table = _build_category_table(
@@ -150,7 +157,10 @@ def build_dashboard_response(
         budget_result=budget_result,
         variance_result=variance_result,
     )
-    if gp_variance_result:
+    if (
+        gp_variance_result
+        and normalized_flow in {"gp_variance", "full"}
+    ):
         category_table = _build_gp_variance_category_table(
             gp_variance_result
         )
@@ -203,6 +213,9 @@ def build_dashboard_response(
     data_limitations = _build_data_limitations(
         finance_analysis=finance_analysis,
         kpi_result=kpi_result,
+    )
+    data_limitations.extend(
+        _build_autonomous_control_messages(finance_analysis)
     )
 
     available_sections = _identify_available_sections(
@@ -274,6 +287,86 @@ def build_dashboard_response(
         available_sections=available_sections,
         unavailable_sections=unavailable_sections,
     )
+
+
+def _merge_autonomous_dashboard_context(
+    finance_analysis: dict[str, Any],
+) -> dict[str, Any]:
+    """Map compact autonomous evidence into existing dashboard sections."""
+
+    merged = deepcopy(finance_analysis)
+    context = merged.get("autonomous_context")
+    if not isinstance(context, dict):
+        return merged
+    result_keys = {
+        "kpi": "kpi_result",
+        "revenue_variance": "variance_result",
+        "pnl": "pnl_result",
+        "gp_decomposition": "gp_variance_result",
+    }
+    evidence = context.get("evidence", [])
+    if isinstance(evidence, list):
+        for record in evidence:
+            if not isinstance(record, dict):
+                continue
+            payload = record.get("compact_payload")
+            result_key = result_keys.get(record.get("result_type"))
+            if not result_key or not isinstance(payload, dict):
+                continue
+            prepared = deepcopy(payload)
+            if record.get("result_type") == "gp_decomposition":
+                product = prepared.get("product_level")
+                portfolio = prepared.get("portfolio_level")
+                if isinstance(product, list):
+                    prepared.setdefault("category_analysis", product)
+                if isinstance(portfolio, dict):
+                    prepared = {**portfolio, **prepared}
+            merged.setdefault(result_key, prepared)
+    diagnostics = context.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        recommendation = diagnostics.get("recommendation_result")
+        if isinstance(recommendation, dict):
+            payload = recommendation.get("payload")
+            if isinstance(payload, dict):
+                merged.setdefault(
+                    "recommendation_result",
+                    deepcopy(payload),
+                )
+    return merged
+
+
+def _build_autonomous_control_messages(
+    finance_analysis: dict[str, Any],
+) -> list[str]:
+    context = finance_analysis.get("autonomous_context")
+    if not isinstance(context, dict):
+        return []
+    messages: list[str] = []
+    review = context.get("review_result")
+    if isinstance(review, dict) and review.get("decision"):
+        messages.append(
+            f"Autonomous review status: {review['decision']}."
+        )
+        for caveat in review.get("required_caveats", []):
+            if isinstance(caveat, str) and caveat.strip():
+                messages.append(f"Reviewer caveat: {caveat.strip()}")
+    reconciliation = context.get("reconciliation_result")
+    if isinstance(reconciliation, dict):
+        for warning in reconciliation.get("warnings", []):
+            if isinstance(warning, str) and warning.strip():
+                messages.append(
+                    f"Reconciliation warning: {warning.strip()}"
+                )
+        for check in reconciliation.get("checks", []):
+            if (
+                isinstance(check, dict)
+                and check.get("passed") is False
+                and check.get("details")
+            ):
+                messages.append(
+                    f"Reconciliation failed: {check['details']}"
+                )
+    return messages
 
 
 def _build_kpi_cards(

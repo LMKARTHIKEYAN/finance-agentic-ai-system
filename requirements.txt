@@ -7,3 +7,4 @@ psycopg[binary]
 pgvector
 streamlit
 openai
+pydantic

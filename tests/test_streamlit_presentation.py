@@ -1,6 +1,7 @@
 """Tests for concise Streamlit management presentation."""
 
 from src.ui.streamlit import (
+    _build_hybrid_status_messages,
     _has_chart_values,
     _select_visible_chat_answer,
     _shorten_management_summary,
@@ -54,4 +55,40 @@ def test_chart_values_accept_numeric_records() -> None:
     assert _has_chart_values(
         [{"period": "2026-04", "actual": 100.0}],
         value_fields=("actual", "budget"),
+    )
+
+
+def test_hybrid_status_presents_review_and_reconciliation() -> None:
+    messages = _build_hybrid_status_messages(
+        {
+            "hybrid_metadata": {
+                "execution_mode": "autonomous",
+                "autonomous_status": "completed",
+                "review_decision": "approved_with_caveats",
+                "reconciliation_warnings": ["Excluded category."],
+            }
+        }
+    )
+
+    text = " ".join(message for _, message in messages)
+    assert "Autonomous" in text
+    assert "Approved With Caveats" in text
+    assert "Excluded category" in text
+
+
+def test_hybrid_status_presents_deterministic_fallback() -> None:
+    messages = _build_hybrid_status_messages(
+        {
+            "hybrid_metadata": {
+                "execution_mode": "deterministic",
+                "autonomous_status": "fallback",
+                "fallback_used": True,
+                "fallback_reason": "Reviewer requested replan.",
+            }
+        }
+    )
+
+    assert any(
+        level == "warning" and "Reviewer requested replan" in message
+        for level, message in messages
     )

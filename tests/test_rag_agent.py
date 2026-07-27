@@ -19,6 +19,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Sequence
 
+import pandas as pd
 import pytest
 
 from src.rag.embeddings import BaseEmbeddingService
@@ -874,6 +875,50 @@ def test_llm_mode_requires_response_generator() -> None:
                 execution_mode=ExecutionMode.LLM
             ),
         )
+
+
+def test_rag_request_accepts_compact_autonomous_context() -> None:
+    request = RAGRequest(
+        user_request="Explain performance",
+        finance_analysis={"revenue": 100},
+        autonomous_context={
+            "review_result": {"decision": "approved"},
+            "evidence_ids": ["pnl-001"],
+        },
+    )
+
+    assert request.autonomous_context == {
+        "review_result": {"decision": "approved"},
+        "evidence_ids": ["pnl-001"],
+    }
+
+
+def test_rag_request_rejects_dataframe_in_autonomous_context() -> None:
+    with pytest.raises(TypeError, match="DataFrames"):
+        RAGRequest(
+            user_request="Explain performance",
+            finance_analysis={},
+            autonomous_context={
+                "raw_data": pd.DataFrame({"revenue": [100]})
+            },
+        )
+
+
+def test_rag_agent_includes_autonomous_context_in_grounded_prompt() -> None:
+    agent = FinanceRAGAgent(retriever=build_test_retriever())
+
+    result = agent.run(
+        user_request="Explain performance",
+        finance_analysis={"revenue": 100},
+        autonomous_context={
+            "review_result": {"decision": "approved"},
+            "evidence_ids": ["pnl-001"],
+        },
+    )
+
+    assert '"autonomous_context"' in result.response
+    assert '"decision": "approved"' in result.response
+    assert '"pnl-001"' in result.response
 
 
 def test_run_deterministic_mode() -> None:
