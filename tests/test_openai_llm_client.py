@@ -9,6 +9,7 @@ from src.llm.openai_client import OpenAIStructuredLLMClient
 from src.llm.schemas import (
     LLMBudgetExceededError,
     LLMError,
+    LLMOutputLimitError,
     LLMStructuredOutputError,
     LLMTimeoutError,
 )
@@ -25,10 +26,14 @@ class FakeResponsesAPI:
         output: object,
         usage: object | None = None,
         error: Exception | None = None,
+        status: str | None = None,
+        incomplete_reason: str | None = None,
     ) -> None:
         self.output = output
         self.usage = usage
         self.error = error
+        self.status = status
+        self.incomplete_reason = incomplete_reason
         self.calls: list[dict[str, object]] = []
 
     def parse(self, **kwargs: object) -> SimpleNamespace:
@@ -41,6 +46,10 @@ class FakeResponsesAPI:
             id="response-123",
             output_parsed=self.output,
             usage=self.usage,
+            status=self.status,
+            incomplete_details=SimpleNamespace(
+                reason=self.incomplete_reason
+            ),
         )
 
 
@@ -94,6 +103,20 @@ def test_generate_structured_rejects_invalid_output() -> None:
     responses = FakeResponsesAPI(output={"decision": "autonomous"})
 
     with pytest.raises(LLMStructuredOutputError):
+        build_client(responses).generate_structured(
+            messages=[{"role": "user", "content": "Classify"}],
+            response_model=DecisionOutput,
+        )
+
+
+def test_generate_structured_classifies_output_token_limit() -> None:
+    responses = FakeResponsesAPI(
+        output=None,
+        status="incomplete",
+        incomplete_reason="max_output_tokens",
+    )
+
+    with pytest.raises(LLMOutputLimitError):
         build_client(responses).generate_structured(
             messages=[{"role": "user", "content": "Classify"}],
             response_model=DecisionOutput,

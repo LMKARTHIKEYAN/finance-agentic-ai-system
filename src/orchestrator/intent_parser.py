@@ -198,6 +198,9 @@ class FinanceIntent:
     period: ParsedPeriod = field(
         default_factory=ParsedPeriod
     )
+    comparison_period: ParsedPeriod = field(
+        default_factory=ParsedPeriod
+    )
     category: str | None = None
     scenario_name: str | None = None
     requested_kpis: tuple[str, ...] = ()
@@ -227,6 +230,21 @@ class FinanceIntent:
         if self.period.granularity != "unknown":
             filters["period_granularity"] = (
                 self.period.granularity
+            )
+
+        if self.comparison_period.start_date:
+            filters["comparison_start_date"] = (
+                self.comparison_period.start_date
+            )
+
+        if self.comparison_period.end_date:
+            filters["comparison_end_date"] = (
+                self.comparison_period.end_date
+            )
+
+        if self.comparison_period.display_value:
+            filters["comparison_period"] = (
+                self.comparison_period.display_value
             )
 
         if self.category:
@@ -301,6 +319,9 @@ def parse_finance_intent(
         normalized_request,
         reference_date=effective_reference_date,
     )
+    comparison_period = _extract_comparison_period(
+        normalized_request
+    )
 
     category = _extract_category(
         normalized_request
@@ -347,6 +368,7 @@ def parse_finance_intent(
         selected_flow=selected_flow,
         comparison=comparison,
         period=period,
+        comparison_period=comparison_period,
         category=category,
         scenario_name=scenario_name,
         requested_kpis=requested_kpis,
@@ -416,6 +438,11 @@ def merge_finance_intent(
         if reparsed.period.start_date
         else pending_intent.period
     )
+    comparison_period = (
+        reparsed.comparison_period
+        if reparsed.comparison_period.start_date
+        else pending_intent.comparison_period
+    )
 
     category = (
         reparsed.category
@@ -458,6 +485,7 @@ def merge_finance_intent(
         selected_flow=selected_flow,
         comparison=comparison,
         period=period,
+        comparison_period=comparison_period,
         category=category,
         scenario_name=scenario_name,
         requested_kpis=requested_kpis,
@@ -547,6 +575,27 @@ def _extract_comparison(
         return "actual_vs_budget"
 
     return "none"
+
+
+def _extract_comparison_period(
+    normalized_request: str,
+) -> ParsedPeriod:
+    """Extract a named month following a comparison phrase."""
+
+    month_pattern = "|".join(
+        sorted(MONTH_NAMES, key=len, reverse=True)
+    )
+    match = re.search(
+        rf"\b(?:versus|vs\.?|compared\s+to)\s+"
+        rf"({month_pattern})\s+(20\d{{2}})\b",
+        normalized_request,
+    )
+    if not match:
+        return ParsedPeriod()
+    return _month_period(
+        year=int(match.group(2)),
+        month=MONTH_NAMES[match.group(1)],
+    )
 
 
 def _contains_period_expression(

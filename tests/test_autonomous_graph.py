@@ -18,6 +18,7 @@ from src.autonomous.schemas import (
 )
 from src.llm.client import StructuredLLMClient
 from src.llm.schemas import (
+    LLMStructuredOutputError,
     LLMRequestMetadata,
     LLMUsage,
     StructuredLLMResponse,
@@ -187,4 +188,36 @@ def test_graph_supervisor_failure_returns_fallback() -> None:
     )
 
     assert state["result"].status == "fallback"
-    assert state["result"].fallback_reason == "Supervisor planning failed."
+    assert state["result"].fallback_reason == (
+        "Supervisor planning failed: unexpected_error."
+    )
+
+
+def test_graph_reports_safe_supervisor_failure_category() -> None:
+    secret = "secret raw finance data"
+
+    class InvalidStructuredOutputClient(QueueClient):
+        def generate_structured(self, **kwargs: Any) -> Any:
+            raise LLMStructuredOutputError(secret)
+
+    graph = build_autonomous_graph(
+        supervisor=FinanceSupervisorAgent(
+            InvalidStructuredOutputClient([])
+        ),
+        validator=AutonomousPlanValidator(),
+        coordinator=_coordinator(),
+    )
+
+    state = graph.invoke(
+        {
+            "request": "Analyze",
+            "available_inputs": set(),
+            "execution_arguments": {},
+        }
+    )
+
+    reason = state["result"].fallback_reason
+    assert reason == (
+        "Supervisor planning failed: structured_output_invalid."
+    )
+    assert secret not in reason

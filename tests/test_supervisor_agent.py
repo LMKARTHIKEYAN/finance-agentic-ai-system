@@ -112,6 +112,16 @@ def test_supervisor_returns_structured_plan() -> None:
     assert client.calls[0]["timeout_seconds"] == 120.0
 
 
+def test_supervisor_plan_schema_is_strict_openai_compatible() -> None:
+    schema = SupervisorPlan.model_json_schema()
+    arguments_schema = schema["$defs"]["PlanStepArguments"]
+
+    assert arguments_schema["additionalProperties"] is False
+    assert "agent_name" in arguments_schema["properties"]
+    assert "tool_name" in arguments_schema["properties"]
+    assert "requested_kpis" in arguments_schema["properties"]
+
+
 def test_supervisor_sends_only_safe_dataset_and_tool_metadata() -> None:
     client = FakeStructuredLLMClient(_plan())
     dataset = DatasetAvailability(
@@ -217,11 +227,124 @@ def test_supervisor_wraps_provider_error_without_exposing_details() -> None:
     assert "secret provider response" not in str(error.value)
 
 
+@pytest.mark.parametrize(
+    ("provider_error_name", "expected_code"),
+    [
+        ("AuthenticationError", "authentication_error"),
+        (
+            "PermissionDeniedError",
+            "permission_or_model_access_denied",
+        ),
+        ("RateLimitError", "rate_limit_or_quota_exceeded"),
+        ("BadRequestError", "invalid_provider_request"),
+        ("UnprocessableEntityError", "unprocessable_request"),
+        ("NotFoundError", "model_or_endpoint_not_found"),
+        ("APIConnectionError", "provider_connection_error"),
+        ("InternalServerError", "provider_server_error"),
+        ("APIResponseValidationError", "response_validation_error"),
+        ("LengthFinishReasonError", "output_token_limit"),
+        ("ContentFilterFinishReasonError", "content_filter"),
+        ("ValidationError", "structured_output_invalid"),
+        ("OpenAIError", "provider_sdk_error"),
+        ("APIError", "provider_sdk_error"),
+    ],
+)
+def test_supervisor_classifies_safe_provider_error_types(
+    provider_error_name: str,
+    expected_code: str,
+) -> None:
+    provider_error_type = type(provider_error_name, (RuntimeError,), {})
+    client = FakeStructuredLLMClient(
+        _plan(),
+        error=provider_error_type("secret provider details"),
+    )
+
+    with pytest.raises(SupervisorAgentError) as captured:
+        FinanceSupervisorAgent(client).propose_plan("Analyze performance")
+
+    assert captured.value.failure_code == expected_code
+    assert "secret provider details" not in str(captured.value)
+
+
 def test_supervisor_rejects_non_structured_provider_output() -> None:
     client = FakeStructuredLLMClient({"objective": "unvalidated"})
 
     with pytest.raises(SupervisorAgentError, match="invalid structured plan"):
         FinanceSupervisorAgent(client).propose_plan("Analyze performance")
+
+    assert len(client.calls) == 2
+
+
+def test_supervisor_retries_invalid_structure_then_succeeds() -> None:
+    class RetryClient(FakeStructuredLLMClient):
+        def __init__(self) -> None:
+            super().__init__(_plan())
+            self.attempt = 0
+
+        def generate_structured(self, **kwargs: Any) -> Any:
+            self.calls.append(kwargs)
+            self.attempt += 1
+            if self.attempt == 1:
+                invalid_type = type("ValidationError", (RuntimeError,), {})
+                raise invalid_type("secret invalid response")
+            return StructuredLLMResponse[SupervisorPlan](
+                output=_plan(),
+                usage=LLMUsage(),
+                metadata=LLMRequestMetadata(
+                    provider=self.provider,
+                    model=self.model,
+                    elapsed_seconds=0.01,
+                ),
+            )
+
+    client = RetryClient()
+
+    result = FinanceSupervisorAgent(client).propose_plan(
+        "Analyze performance"
+    )
+
+    assert result == _plan()
+    assert len(client.calls) == 2
+    retry_messages = client.calls[1]["messages"]
+    assert "failed structured contract validation" in (
+        retry_messages[-1]["content"]
+    )
+    assert "secret invalid response" not in str(retry_messages)
+
+
+def test_supervisor_stops_after_configured_structure_retry() -> None:
+    invalid_type = type("ValidationError", (RuntimeError,), {})
+    client = FakeStructuredLLMClient(
+        _plan(),
+        error=invalid_type("secret invalid response"),
+    )
+    limits = AutonomousExecutionLimits(max_retries_per_agent=1)
+
+    with pytest.raises(SupervisorAgentError) as captured:
+        FinanceSupervisorAgent(
+            client,
+            limits=limits,
+        ).propose_plan("Analyze performance")
+
+    assert captured.value.failure_code == "structured_output_invalid"
+    assert len(client.calls) == 2
+    assert "secret invalid response" not in str(captured.value)
+
+
+def test_supervisor_does_not_retry_non_structural_provider_failure() -> None:
+    error_type = type("AuthenticationError", (RuntimeError,), {})
+    client = FakeStructuredLLMClient(
+        _plan(),
+        error=error_type("secret credentials"),
+    )
+
+    with pytest.raises(SupervisorAgentError) as captured:
+        FinanceSupervisorAgent(client).propose_plan(
+            "Analyze performance"
+        )
+
+    assert captured.value.failure_code == "authentication_error"
+    assert len(client.calls) == 1
 
 
 def test_supervisor_rejects_empty_tool_registry() -> None:

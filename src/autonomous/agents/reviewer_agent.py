@@ -19,10 +19,22 @@ from src.autonomous.schemas import (
     SupervisorPlan,
 )
 from src.llm.client import LLMMessage, StructuredLLMClient
+from src.llm.schemas import (
+    LLMBudgetExceededError,
+    LLMError,
+    LLMOutputLimitError,
+    LLMStructuredOutputError,
+    LLMTimeoutError,
+    LLMUsage,
+)
 
 
 class ReviewerAgentError(RuntimeError):
     """Raised when the reviewer cannot return a safe structured result."""
+
+    def __init__(self, message: str, *, failure_code: str) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
 
 
 class ReviewerAgent:
@@ -80,6 +92,13 @@ Review rules:
         self._llm_client = llm_client
         self._limits = resolved_limits
         self._max_output_tokens = resolved_max_tokens
+        self._last_usage: LLMUsage | None = None
+
+    @property
+    def last_usage(self) -> LLMUsage | None:
+        """Return usage from the most recent successful provider response."""
+
+        return self._last_usage
 
     def review(
         self,
@@ -104,6 +123,7 @@ Review rules:
             )
         cleaned_answer = _required_text(draft_answer, "draft_answer")
         records = _validated_evidence_sequence(evidence)
+        self._last_usage = None
 
         precheck = _precheck(reconciliation, records, diagnostics)
         if precheck is not None:
@@ -125,13 +145,18 @@ Review rules:
             )
         except Exception as exc:
             raise ReviewerAgentError(
-                "Reviewer structured generation failed."
+                "Reviewer structured generation failed.",
+                failure_code=_safe_failure_code(exc),
             ) from exc
 
         result = response.output
+        usage = getattr(response, "usage", None)
+        if isinstance(usage, LLMUsage):
+            self._last_usage = usage
         if not isinstance(result, ReviewResult):
             raise ReviewerAgentError(
-                "Reviewer returned an invalid structured result."
+                "Reviewer returned an invalid structured result.",
+                failure_code="structured_output_invalid",
             )
         _validate_review_decision(result)
         return result
@@ -149,7 +174,8 @@ Review rules:
             "plan": plan.model_dump(mode="json"),
             "reconciliation": reconciliation.model_dump(mode="json"),
             "evidence": [
-                item.model_dump(mode="json") for item in evidence
+                _compact_evidence_for_review(item)
+                for item in evidence
             ],
             "diagnostics": diagnostics.model_dump(mode="json"),
             "draft_answer": draft_answer,
@@ -182,6 +208,72 @@ def _validated_evidence_sequence(
     if any(not isinstance(item, EvidenceRecord) for item in records):
         raise TypeError("every evidence item must be an EvidenceRecord.")
     return records
+
+
+def _compact_evidence_for_review(
+    record: EvidenceRecord,
+) -> dict[str, Any]:
+    """Project verified evidence into a bounded reviewer-safe payload."""
+
+    compact_record = record.model_dump(
+        mode="json",
+        exclude={"compact_payload"},
+    )
+    compact_record["compact_payload"] = _compact_finance_payload(
+        result_type=record.result_type,
+        payload=record.compact_payload,
+    )
+    return compact_record
+
+
+def _compact_finance_payload(
+    *,
+    result_type: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep only values required to verify management conclusions."""
+
+    if result_type == "pnl" and isinstance(
+        payload.get("actual_pnl"),
+        list,
+    ):
+        pnl_fields = (
+            "month",
+            "revenue",
+            "direct_cost",
+            "gross_profit",
+            "gross_margin_percentage",
+            "sales_marketing",
+            "other_opex",
+            "ebitda",
+            "depreciation",
+            "ebit",
+            "interest",
+            "ebt",
+            "income_tax",
+            "net_profit",
+        )
+        return {
+            "actual_pnl": [
+                {
+                    field: row.get(field)
+                    for field in pnl_fields
+                    if field in row
+                }
+                for row in payload["actual_pnl"]
+                if isinstance(row, dict)
+            ],
+            **{
+                key: payload[key]
+                for key in (
+                    "reconciliation_status",
+                    "reconciliation_difference",
+                )
+                if key in payload
+            },
+        }
+
+    return payload
 
 
 def _precheck(
@@ -228,7 +320,8 @@ def _validate_review_decision(result: ReviewResult) -> None:
     if result.decision in {"approved", "approved_with_caveats"}:
         if not result.approved_answer:
             raise ReviewerAgentError(
-                "An approved review requires an approved answer."
+                "An approved review requires an approved answer.",
+                failure_code="review_contract_invalid",
             )
         if (
             result.unsupported_claims
@@ -236,7 +329,8 @@ def _validate_review_decision(result: ReviewResult) -> None:
             or result.reconciliation_issues
         ):
             raise ReviewerAgentError(
-                "Reviewer approval contains blocking issues."
+                "Reviewer approval contains blocking issues.",
+                failure_code="review_contract_invalid",
             )
 
 
@@ -258,3 +352,57 @@ def _required_text(value: object, field_name: str) -> str:
     if not cleaned:
         raise ValueError(f"{field_name} cannot be empty.")
     return cleaned
+
+
+def _safe_failure_code(error: Exception) -> str:
+    """Classify reviewer failures without exposing provider details."""
+
+    current: BaseException | None = error
+    generic_llm_error = False
+    while current is not None:
+        if isinstance(current, LLMTimeoutError):
+            return "timeout"
+        if isinstance(current, LLMOutputLimitError):
+            return "output_token_limit"
+        if isinstance(current, LLMBudgetExceededError):
+            return "token_budget_exceeded"
+        if isinstance(current, LLMStructuredOutputError):
+            return "structured_output_invalid"
+        if isinstance(current, LLMError):
+            generic_llm_error = True
+
+        provider_code = {
+            "AuthenticationError": "authentication_error",
+            "PermissionDeniedError": "permission_or_model_access_denied",
+            "RateLimitError": "rate_limit_or_quota_exceeded",
+            "BadRequestError": "invalid_provider_request",
+            "UnprocessableEntityError": "unprocessable_request",
+            "NotFoundError": "model_or_endpoint_not_found",
+            "APIConnectionError": "provider_connection_error",
+            "InternalServerError": "provider_server_error",
+            "APIResponseValidationError": "response_validation_error",
+            "LengthFinishReasonError": "output_token_limit",
+            "ContentFilterFinishReasonError": "content_filter",
+            "ValidationError": "structured_output_invalid",
+            "OpenAIError": "provider_sdk_error",
+            "APIError": "provider_sdk_error",
+        }.get(type(current).__name__)
+        if provider_code is not None:
+            return provider_code
+
+        status_code = getattr(current, "status_code", None)
+        if status_code == 401:
+            return "authentication_error"
+        if status_code == 403:
+            return "permission_or_model_access_denied"
+        if status_code == 404:
+            return "model_or_endpoint_not_found"
+        if status_code == 429:
+            return "rate_limit_or_quota_exceeded"
+        if status_code == 400:
+            return "invalid_provider_request"
+        if isinstance(status_code, int) and status_code >= 500:
+            return "provider_server_error"
+
+        current = current.__cause__
+    return "provider_api_error" if generic_llm_error else "unexpected_error"

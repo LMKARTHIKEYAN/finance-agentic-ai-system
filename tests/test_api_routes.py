@@ -158,6 +158,44 @@ def test_ask_endpoint_returns_answer() -> None:
     )
 
 
+def test_ask_endpoint_accepts_unresolved_period_display_value() -> None:
+    """
+    A legitimately unresolved intent period should remain API-safe.
+    """
+
+    class UnresolvedPeriodService:
+        def ask(
+            self,
+            question: str,
+            **kwargs,
+        ) -> AskServiceResult:
+            return AskServiceResult(
+                answer="Please specify a reporting period.",
+                sources=[],
+                selected_flow="clarification",
+                execution_status="completed",
+                used_fallback=False,
+                intent={
+                    "original_request": question,
+                    "selected_flow": "clarification",
+                    "period": {
+                        "display_value": None,
+                    },
+                },
+            )
+
+    app = create_test_app(UnresolvedPeriodService())
+    client = TestClient(app)
+
+    response = client.post(
+        "/ask",
+        json={"question": "Why did profit improve?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["intent"]["period"]["display_value"] is None
+
+
 def test_ask_endpoint_rejects_empty_question() -> None:
     """
     Pydantic should reject an empty question before calling the service.

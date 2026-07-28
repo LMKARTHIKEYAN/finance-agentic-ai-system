@@ -519,7 +519,7 @@ class ParsedPeriodResponse(BaseModel):
 
     start_date: str | None = None
     end_date: str | None = None
-    display_value: str = ""
+    display_value: str | None = None
     granularity: str = "unknown"
 
 

@@ -1,8 +1,11 @@
 """Tests for concise Streamlit management presentation."""
 
+import pandas as pd
+
 from src.ui.streamlit import (
     _build_hybrid_status_messages,
     _has_chart_values,
+    _prepare_table_dataframe,
     _select_visible_chat_answer,
     _shorten_management_summary,
 )
@@ -91,4 +94,58 @@ def test_hybrid_status_presents_deterministic_fallback() -> None:
     assert any(
         level == "warning" and "Reviewer requested replan" in message
         for level, message in messages
+    )
+
+
+def test_pnl_table_is_presented_vertically() -> None:
+    dataframe = pd.DataFrame(
+        [
+            {
+                "month": "2026-05",
+                "revenue_actual": 4_678_564.85,
+                "revenue_budget": 5_579_766.62,
+                "revenue_variance": -901_201.77,
+                "revenue_variance_percentage": -16.15,
+            }
+        ]
+    )
+
+    result = _prepare_table_dataframe(
+        table_payload={
+            "title": "Actual vs Budget P&L",
+        },
+        dataframe=dataframe,
+    )
+
+    assert list(result.columns) == [
+        "Metric",
+        "Actual",
+        "Budget",
+        "Variance",
+        "Variance %",
+    ]
+    assert result.to_dict("records") == [
+        {
+            "Metric": "Revenue",
+            "Actual": "4,678,564.85",
+            "Budget": "5,579,766.62",
+            "Variance": "-901,201.77",
+            "Variance %": "-16.15%",
+        },
+    ]
+
+
+def test_non_pnl_table_keeps_horizontal_layout() -> None:
+    dataframe = pd.DataFrame(
+        [{"month": "2026-05", "revenue": 100.0}]
+    )
+
+    result = _prepare_table_dataframe(
+        table_payload={"title": "KPI Detail"},
+        dataframe=dataframe,
+    )
+
+    pd.testing.assert_frame_equal(
+        result,
+        dataframe,
     )

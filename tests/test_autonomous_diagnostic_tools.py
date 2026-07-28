@@ -75,3 +75,55 @@ def test_recommendation_wrapper_uses_root_cause_result() -> None:
         result.payload["recommendations"][0]["recommended_action"]
         == "Recover volume"
     )
+
+
+def test_pnl_diagnostics_compare_monthly_calculation_evidence() -> None:
+    result = identify_supported_root_causes(
+        pnl_result={
+            "actual_pnl": [
+                {
+                    "month": "2026-03",
+                    "revenue": 100.0,
+                    "direct_cost": 60.0,
+                    "sales_marketing": 5.0,
+                    "other_opex": 4.0,
+                    "depreciation": 2.0,
+                    "interest": 1.0,
+                    "income_tax": 7.0,
+                    "net_profit": 21.0,
+                },
+                {
+                    "month": "2026-04",
+                    "revenue": 120.0,
+                    "direct_cost": 65.0,
+                    "sales_marketing": 6.0,
+                    "other_opex": 4.0,
+                    "depreciation": 2.0,
+                    "interest": 1.0,
+                    "income_tax": 10.0,
+                    "net_profit": 32.0,
+                },
+            ]
+        }
+    )
+
+    assert result.payload["base_month"] == "2026-03"
+    assert result.payload["current_month"] == "2026-04"
+    assert result.payload["net_profit_change"] == 11.0
+    assert result.payload["drivers"][0]["metric"] == "revenue"
+
+
+def test_pnl_recommendations_use_supported_driver_payload() -> None:
+    result = generate_supported_recommendations(
+        root_cause_result={
+            "analysis_type": "pnl_period_change",
+            "drivers": [
+                {
+                    "metric": "revenue",
+                    "impact": "favorable",
+                }
+            ],
+        }
+    )
+
+    assert result.payload["recommendations"][0]["metric"] == "revenue"

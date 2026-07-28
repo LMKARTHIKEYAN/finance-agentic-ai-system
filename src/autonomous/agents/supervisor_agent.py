@@ -18,10 +18,21 @@ from src.autonomous.tools.registry import (
     ToolRegistry,
 )
 from src.llm.client import LLMMessage, StructuredLLMClient
+from src.llm.schemas import (
+    LLMBudgetExceededError,
+    LLMError,
+    LLMOutputLimitError,
+    LLMStructuredOutputError,
+    LLMTimeoutError,
+)
 
 
 class SupervisorAgentError(RuntimeError):
     """Raised when the supervisor cannot produce a structured plan."""
+
+    def __init__(self, message: str, *, failure_code: str) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
 
 
 class FinanceSupervisorAgent:
@@ -127,23 +138,47 @@ Planning rules:
             validation_issues=issues,
         )
 
-        try:
-            response = self._llm_client.generate_structured(
-                messages=messages,
-                response_model=SupervisorPlan,
-                max_output_tokens=self._max_output_tokens,
-                timeout_seconds=self._limits.max_execution_seconds,
-            )
-        except Exception as exc:
-            raise SupervisorAgentError(
-                "Supervisor plan generation failed."
-            ) from exc
+        attempts = self._limits.max_retries_per_agent + 1
+        current_messages = messages
+        last_error: Exception | None = None
 
-        if not isinstance(response.output, SupervisorPlan):
+        for attempt in range(attempts):
+            try:
+                response = self._llm_client.generate_structured(
+                    messages=current_messages,
+                    response_model=SupervisorPlan,
+                    max_output_tokens=self._max_output_tokens,
+                    timeout_seconds=self._limits.max_execution_seconds,
+                )
+            except Exception as exc:
+                failure_code = _safe_failure_code(exc)
+                if (
+                    failure_code == "structured_output_invalid"
+                    and attempt + 1 < attempts
+                ):
+                    last_error = exc
+                    current_messages = _retry_messages(messages)
+                    continue
+                raise SupervisorAgentError(
+                    "Supervisor plan generation failed.",
+                    failure_code=failure_code,
+                ) from exc
+
+            if isinstance(response.output, SupervisorPlan):
+                return response.output
+
+            if attempt + 1 < attempts:
+                current_messages = _retry_messages(messages)
+                continue
             raise SupervisorAgentError(
-                "Supervisor returned an invalid structured plan."
+                "Supervisor returned an invalid structured plan.",
+                failure_code="structured_output_invalid",
             )
-        return response.output
+
+        raise SupervisorAgentError(
+            "Supervisor plan generation failed.",
+            failure_code="structured_output_invalid",
+        ) from last_error
 
     def _build_messages(
         self,
@@ -216,3 +251,77 @@ def _validated_sequence(
             f"{expected_type.__name__}."
         )
     return result
+
+
+def _retry_messages(
+    original_messages: tuple[LLMMessage, ...],
+) -> tuple[LLMMessage, ...]:
+    """Add a bounded, data-free correction request for one retry."""
+
+    return (
+        *original_messages,
+        {
+            "role": "user",
+            "content": (
+                "The previous plan failed structured contract validation. "
+                "Return a corrected SupervisorPlan with unique step IDs, "
+                "valid acyclic dependencies, a valid reporting date range, "
+                "only approved argument fields, and the required final "
+                "reviewer step. Do not calculate financial values."
+            ),
+        },
+    )
+
+
+def _safe_failure_code(error: Exception) -> str:
+    """Classify provider failures without exposing exception details."""
+
+    current: BaseException | None = error
+    generic_llm_error = False
+    while current is not None:
+        if isinstance(current, LLMTimeoutError):
+            return "timeout"
+        if isinstance(current, LLMOutputLimitError):
+            return "output_token_limit"
+        if isinstance(current, LLMBudgetExceededError):
+            return "token_budget_exceeded"
+        if isinstance(current, LLMStructuredOutputError):
+            return "structured_output_invalid"
+        if isinstance(current, LLMError):
+            generic_llm_error = True
+
+        provider_code = {
+            "AuthenticationError": "authentication_error",
+            "PermissionDeniedError": "permission_or_model_access_denied",
+            "RateLimitError": "rate_limit_or_quota_exceeded",
+            "BadRequestError": "invalid_provider_request",
+            "UnprocessableEntityError": "unprocessable_request",
+            "NotFoundError": "model_or_endpoint_not_found",
+            "APIConnectionError": "provider_connection_error",
+            "InternalServerError": "provider_server_error",
+            "APIResponseValidationError": "response_validation_error",
+            "LengthFinishReasonError": "output_token_limit",
+            "ContentFilterFinishReasonError": "content_filter",
+            "ValidationError": "structured_output_invalid",
+            "OpenAIError": "provider_sdk_error",
+            "APIError": "provider_sdk_error",
+        }.get(type(current).__name__)
+        if provider_code is not None:
+            return provider_code
+
+        status_code = getattr(current, "status_code", None)
+        if status_code == 401:
+            return "authentication_error"
+        if status_code == 403:
+            return "permission_or_model_access_denied"
+        if status_code == 404:
+            return "model_or_endpoint_not_found"
+        if status_code == 429:
+            return "rate_limit_or_quota_exceeded"
+        if status_code == 400:
+            return "invalid_provider_request"
+        if isinstance(status_code, int) and status_code >= 500:
+            return "provider_server_error"
+
+        current = current.__cause__
+    return "provider_api_error" if generic_llm_error else "unexpected_error"

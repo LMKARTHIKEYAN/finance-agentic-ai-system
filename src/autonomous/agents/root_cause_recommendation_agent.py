@@ -65,16 +65,34 @@ class RootCauseRecommendationAgent:
 
         _validate_step(step)
         verified_evidence = _validated_evidence(evidence)
-        if anomaly_result is None:
-            raise ValueError("anomaly_result is required.")
-        if operations_result is None:
-            raise ValueError("operations_result is required.")
+        pnl_evidence = next(
+            (
+                item.compact_payload
+                for item in verified_evidence
+                if item.result_type == "pnl"
+                and isinstance(
+                    item.compact_payload.get("actual_pnl"),
+                    list,
+                )
+                and len(item.compact_payload["actual_pnl"]) >= 2
+            ),
+            None,
+        )
+        if (
+            pnl_evidence is None
+            and (anomaly_result is None or operations_result is None)
+        ):
+            raise ValueError(
+                "Diagnostics require reconciled multi-period P&L evidence "
+                "or both anomaly_result and operations_result."
+            )
 
         try:
             root_cause_result = self._root_cause_tool(
                 anomaly_result=anomaly_result,
                 operations_result=operations_result,
                 revenue_variance_result=revenue_variance_result,
+                pnl_result=pnl_evidence,
             )
             _validate_tool_result(
                 root_cause_result,

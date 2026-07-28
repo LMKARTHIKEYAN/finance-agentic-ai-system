@@ -190,6 +190,9 @@ def ask_finance_question(
         intent=result.intent,
         session_id=getattr(result, "session_id", None),
         memory_status=getattr(result, "memory_status", None),
+        hybrid_metadata=(
+            getattr(result, "hybrid_metadata", None) or None
+        ),
     )
 
 

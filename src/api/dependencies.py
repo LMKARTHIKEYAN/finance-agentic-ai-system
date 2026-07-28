@@ -19,10 +19,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from src.api.service import (
     FinanceAskService,
     FinanceDataPaths,
 )
+from src.autonomous.runtime import (
+    AutonomousRuntime,
+    build_autonomous_runtime,
+)
+from src.autonomous.service_executor import AutonomousServiceExecutor
+from src.config.settings import settings
 from src.rag.embeddings import (
     DeterministicEmbeddingService,
 )
@@ -37,9 +45,6 @@ from src.rag.rag_agent import (
     RAGAgentConfig,
 )
 from src.rag.retriever import FinanceRetriever
-
-
-load_dotenv()
 
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
@@ -311,6 +316,25 @@ def build_rag_agent(
     )
 
 
+def build_autonomous_service_executor(
+    *,
+    runtime: AutonomousRuntime | None = None,
+) -> AutonomousServiceExecutor | None:
+    """Build autonomous execution only after explicit environment activation."""
+
+    shadow_explicitly_enabled = (
+        os.getenv("AUTONOMOUS_SHADOW_MODE", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if not settings.AUTONOMOUS_ENABLED and not shadow_explicitly_enabled:
+        return None
+    resolved_runtime = runtime or build_autonomous_runtime(
+        app_settings=settings,
+        api_key=_get_required_environment_variable("OPENAI_API_KEY"),
+    )
+    return AutonomousServiceExecutor(resolved_runtime)
+
+
 @lru_cache(maxsize=1)
 def get_finance_service() -> FinanceAskService:
     """
@@ -334,9 +358,23 @@ def get_finance_service() -> FinanceAskService:
 
     data_paths = build_data_paths()
 
+    service_kwargs = {
+        "rag_agent": rag_agent,
+        "data_paths": data_paths,
+    }
+    autonomous_executor = build_autonomous_service_executor()
+    if autonomous_executor is not None:
+        service_kwargs.update(
+            {
+                "autonomous_executor": autonomous_executor,
+                "autonomous_enabled": settings.AUTONOMOUS_ENABLED,
+                "autonomous_shadow_mode": (
+                    settings.AUTONOMOUS_SHADOW_MODE
+                ),
+            }
+        )
     return FinanceAskService(
-        rag_agent=rag_agent,
-        data_paths=data_paths,
+        **service_kwargs,
     )
 
 

@@ -25,6 +25,7 @@ from src.api.service import (
     FinanceDataPaths,
 )
 from src.rag.prompt_templates import PromptType
+from src.orchestrator.intent_parser import parse_finance_intent
 
 
 class FakeDocument:
@@ -212,6 +213,44 @@ def test_service_returns_structured_result(
     assert result.sources[0]["id"] == "chunk_001"
     assert result.sources[0]["rank"] == 1
     assert result.sources[0]["score"] == 0.95
+
+
+def test_comparison_filter_intent_spans_both_pnl_months() -> None:
+    intent = parse_finance_intent(
+        "Analyze April 2026 P&L versus March 2026."
+    )
+
+    filtered = FinanceAskService._comparison_filter_intent(intent)
+
+    assert filtered.period.start_date == "2026-03-01"
+    assert filtered.period.end_date == "2026-04-30"
+    assert filtered.period.granularity == "range"
+
+
+def test_deterministic_service_captures_autonomous_graph_context(
+    data_paths: FinanceDataPaths,
+) -> None:
+    """Completed deterministic execution should retain trusted graph state."""
+
+    service = FinanceAskService(
+        rag_agent=FakeRAGAgent(),
+        data_paths=data_paths,
+        graph_executor=fake_graph_executor,
+    )
+
+    service._ask_deterministic(
+        "Show actual vs budget revenue variance for January 2026"
+    )
+
+    internal_context = service._autonomous_context.get()
+    assert internal_context is not None
+    assert internal_context["selected_flow"] == "variance"
+    assert (
+        internal_context["graph_state"]["variance_result"][
+            "revenue_variance"
+        ]
+        == 125000
+    )
 
 
 

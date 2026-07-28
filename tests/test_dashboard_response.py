@@ -270,6 +270,25 @@ def test_build_dashboard_response_creates_kpi_table(
     }
 
 
+def test_variance_dashboard_excludes_kpi_sections(
+    sample_finance_analysis: dict,
+) -> None:
+    """Variance requests should present comparison results, not KPI detail."""
+
+    result = build_dashboard_response(
+        selected_flow="variance",
+        finance_analysis=sample_finance_analysis,
+    )
+
+    assert result.kpi_cards == []
+    assert result.kpi_table is None
+    assert result.variance_table is not None
+    assert result.category_table is not None
+    assert "kpi_cards" not in result.available_sections
+    assert "kpi_table" not in result.available_sections
+    assert "variance_table" in result.available_sections
+
+
 @pytest.mark.parametrize(
     ("flow", "expected_titles"),
     [
@@ -437,8 +456,24 @@ def test_build_dashboard_response_creates_gp_variance_bridge() -> None:
 
     assert result.category_table is not None
     assert result.category_table.title == "Product Level Analysis"
+    assert "Budget Volume" in result.category_table.columns
+    assert "Budget Price per Unit" in result.category_table.columns
+    assert "Budget GP%" in result.category_table.columns
+    assert "Mix Budget" in result.category_table.columns
+    assert not any(
+        "Base" in column
+        for column in result.category_table.columns
+    )
     assert result.variance_table is not None
     assert result.variance_table.title == "Portfolio Level Analysis"
+    portfolio_text = " ".join(
+        str(value)
+        for row in result.variance_table.rows
+        for value in row.values()
+    )
+    assert "Budget Revenue" in portfolio_text
+    assert "Budget GP%" in portfolio_text
+    assert "Base" not in portfolio_text
     assert [point.label for point in result.waterfall_data] == [
         "Budget GP%",
         "Mix Effect",

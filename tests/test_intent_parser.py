@@ -747,3 +747,16 @@ def test_merge_reply_cannot_be_empty() -> None:
             pending,
             "   ",
         )
+
+
+def test_parse_pnl_period_comparison_retains_both_months() -> None:
+    intent = parse_finance_intent(
+        "Analyze April 2026 P&L and explain why net profit improved "
+        "versus March 2026."
+    )
+
+    assert intent.period.start_date == "2026-04-01"
+    assert intent.period.end_date == "2026-04-30"
+    assert intent.comparison_period.start_date == "2026-03-01"
+    assert intent.comparison_period.end_date == "2026-03-31"
+    assert intent.to_filters()["comparison_period"] == "March 2026"

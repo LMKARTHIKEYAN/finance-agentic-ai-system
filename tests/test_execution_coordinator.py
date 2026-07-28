@@ -18,6 +18,7 @@ from src.autonomous.schemas import (
 from src.autonomous.tools.data_tools import FinanceDataContext
 from src.llm.client import StructuredLLMClient
 from src.llm.schemas import (
+    LLMStructuredOutputError,
     LLMRequestMetadata,
     LLMUsage,
     StructuredLLMResponse,
@@ -25,6 +26,16 @@ from src.llm.schemas import (
 
 
 class ReviewClient(StructuredLLMClient):
+    def __init__(
+        self,
+        *,
+        error: Exception | None = None,
+        usage: LLMUsage | None = None,
+    ) -> None:
+        self.error = error
+        self.usage = usage or LLMUsage()
+        self.calls = 0
+
     @property
     def provider(self) -> str:
         return "fake"
@@ -34,12 +45,15 @@ class ReviewClient(StructuredLLMClient):
         return "fake"
 
     def generate_structured(self, **kwargs: Any) -> Any:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
         return StructuredLLMResponse[ReviewResult](
             output=ReviewResult(
                 decision="approved",
                 approved_answer="Reviewed answer.",
             ),
-            usage=LLMUsage(),
+            usage=self.usage,
             metadata=LLMRequestMetadata(
                 provider="fake",
                 model="fake",
@@ -64,6 +78,15 @@ class VarianceSpecialist:
             status="completed",
             payload={"variance_check": 0.0},
         )
+
+
+class FailingVarianceSpecialist:
+    def execute(
+        self,
+        step: PlanStep,
+        context: FinanceDataContext,
+    ) -> ToolResult:
+        raise RuntimeError("private specialist failure")
 
 
 def _plan() -> SupervisorPlan:
@@ -104,6 +127,8 @@ def _plan() -> SupervisorPlan:
 
 def _coordinator(
     specialist: Any,
+    *,
+    review_client: ReviewClient | None = None,
 ) -> AutonomousExecutionCoordinator:
     diagnostics = RootCauseRecommendationAgent(
         root_cause_tool=lambda **kwargs: ToolResult(
@@ -120,7 +145,9 @@ def _coordinator(
         ),
     )
     return AutonomousExecutionCoordinator(
-        reviewer=ReviewerAgent(ReviewClient()),
+        reviewer=ReviewerAgent(
+            review_client or ReviewClient()
+        ),
         diagnostics=diagnostics,
         specialist_agents={"revenue_variance": specialist},
     )
@@ -211,3 +238,63 @@ def test_coordinator_preserves_dependency_order() -> None:
 
     assert result.status == "completed"
     assert calls == ["first", "second"]
+
+
+def test_coordinator_reports_safe_specialist_stage() -> None:
+    result = _execute(
+        _coordinator(FailingVarianceSpecialist())
+    )
+
+    assert result.status == "fallback"
+    assert (
+        result.fallback_reason
+        == "Revenue variance specialist failed."
+    )
+    assert "private specialist failure" not in result.fallback_reason
+
+
+def test_coordinator_retries_and_reports_safe_reviewer_failure() -> None:
+    client = ReviewClient(
+        error=LLMStructuredOutputError(
+            "private reviewer response"
+        )
+    )
+
+    result = _execute(
+        _coordinator(
+            VarianceSpecialist([]),
+            review_client=client,
+        )
+    )
+
+    assert result.status == "fallback"
+    assert (
+        result.fallback_reason
+        == "Reviewer failed: structured_output_invalid."
+    )
+    assert client.calls == 2
+    assert "private reviewer response" not in result.fallback_reason
+
+
+def test_coordinator_records_reviewer_token_and_cost_usage() -> None:
+    client = ReviewClient(
+        usage=LLMUsage(
+            input_tokens=100,
+            output_tokens=20,
+            total_tokens=120,
+            estimated_cost_usd=0.001,
+        )
+    )
+
+    result = _execute(
+        _coordinator(
+            VarianceSpecialist([]),
+            review_client=client,
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.usage.input_tokens == 100
+    assert result.usage.output_tokens == 20
+    assert result.usage.total_tokens == 120
+    assert result.usage.estimated_cost_usd == 0.001

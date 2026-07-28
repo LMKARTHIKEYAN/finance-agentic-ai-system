@@ -789,6 +789,17 @@ def _build_hybrid_status_messages(
         messages.append(
             ("success", f"Reviewer status: {_humanize(review)}")
         )
+    evidence_ids = metadata.get("evidence_ids", [])
+    if isinstance(evidence_ids, list) and evidence_ids:
+        messages.append(
+            (
+                "caption",
+                "Evidence: "
+                + ", ".join(
+                    str(item) for item in evidence_ids
+                ),
+            )
+        )
     if metadata.get("fallback_used"):
         reason = metadata.get("fallback_reason")
         messages.append(
@@ -1589,11 +1600,161 @@ def _render_table_payload(
                 valid_columns
             ]
 
+    dataframe = _prepare_table_dataframe(
+        table_payload=table_payload,
+        dataframe=dataframe,
+    )
+
     st.dataframe(
         dataframe,
         use_container_width=True,
         hide_index=True,
     )
+
+
+def _prepare_table_dataframe(
+    *,
+    table_payload: dict[str, Any],
+    dataframe: pd.DataFrame,
+) -> pd.DataFrame:
+    """Prepare dashboard tables for a readable Streamlit layout."""
+
+    if (
+        table_payload.get("title")
+        != "Actual vs Budget P&L"
+        or dataframe.empty
+        or "month" not in dataframe.columns
+    ):
+        return dataframe
+
+    comparison_suffixes = (
+        (
+            "_percentage_point_variance",
+            "Variance",
+        ),
+        (
+            "_variance_percentage",
+            "Variance %",
+        ),
+        ("_actual", "Actual"),
+        ("_budget", "Budget"),
+        ("_variance", "Variance"),
+    )
+    metric_names: list[str] = []
+    comparison_columns: dict[
+        str,
+        dict[str, str],
+    ] = {}
+
+    for column in dataframe.columns:
+        if column == "month":
+            continue
+
+        for suffix, comparison in comparison_suffixes:
+            if not str(column).endswith(suffix):
+                continue
+
+            metric = str(column)[: -len(suffix)]
+            if suffix == "_percentage_point_variance":
+                metric = f"{metric}_percentage"
+
+            if metric not in comparison_columns:
+                metric_names.append(metric)
+                comparison_columns[metric] = {}
+
+            comparison_columns[metric][comparison] = str(
+                column
+            )
+            break
+
+    if not metric_names:
+        return dataframe
+
+    include_month = len(dataframe.index) > 1
+    records: list[dict[str, Any]] = []
+
+    for _, source_row in dataframe.iterrows():
+        for metric in metric_names:
+            record: dict[str, Any] = {
+                "Metric": metric.replace(
+                    "_",
+                    " ",
+                ).title(),
+            }
+
+            if include_month:
+                record["Month"] = str(
+                    source_row["month"]
+                )
+
+            for comparison in (
+                "Actual",
+                "Budget",
+                "Variance",
+                "Variance %",
+            ):
+                source_column = comparison_columns[
+                    metric
+                ].get(comparison)
+                value = (
+                    source_row[source_column]
+                    if source_column is not None
+                    else None
+                )
+                record[comparison] = (
+                    _format_pnl_display_value(
+                        metric=metric,
+                        comparison=comparison,
+                        value=value,
+                    )
+                )
+
+            records.append(record)
+
+    ordered_columns = [
+        "Metric",
+        *(
+            ["Month"]
+            if include_month
+            else []
+        ),
+        "Actual",
+        "Budget",
+        "Variance",
+        "Variance %",
+    ]
+    return pd.DataFrame(
+        records,
+        columns=ordered_columns,
+    )
+
+
+def _format_pnl_display_value(
+    *,
+    metric: Any,
+    comparison: str,
+    value: Any,
+) -> Any:
+    """Format one P&L value without changing the underlying API data."""
+
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+    ):
+        return value
+
+    normalized_metric = str(metric).lower()
+    if comparison == "Variance %":
+        suffix = "%"
+    elif "percentage" in normalized_metric:
+        suffix = (
+            " pp"
+            if comparison == "Variance"
+            else "%"
+        )
+    else:
+        suffix = ""
+    return f"{value:,.2f}{suffix}"
 
 
 def _render_management_sections(

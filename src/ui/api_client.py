@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
-DEFAULT_TIMEOUT_SECONDS = 60.0
+DEFAULT_TIMEOUT_SECONDS = 150.0
 
 
 class FinanceApiClientError(RuntimeError):
@@ -45,7 +45,7 @@ def ask_finance_question(
     metadata_filter: dict[str, Any] | None = None,
     *,
     base_url: str | None = None,
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    timeout_seconds: float | None = None,
     user_id: str | None = None,
     session_id: str | None = None,
 ) -> dict[str, Any]:
@@ -94,7 +94,7 @@ def ask_finance_question(
 
     validated_question = _validate_question(question)
     validated_top_k = _validate_top_k(top_k)
-    validated_timeout = _validate_timeout(timeout_seconds)
+    validated_timeout = _resolve_timeout(timeout_seconds)
 
     payload = {
         "question": validated_question,
@@ -236,6 +236,25 @@ def _validate_timeout(
         )
 
     return float(timeout_seconds)
+
+
+def _resolve_timeout(timeout_seconds: float | None) -> float:
+    """Use an explicit timeout or the configured autonomous-safe default."""
+
+    if timeout_seconds is not None:
+        return _validate_timeout(timeout_seconds)
+
+    configured = os.getenv("FINANCE_API_TIMEOUT_SECONDS")
+    if configured is None or not configured.strip():
+        return DEFAULT_TIMEOUT_SECONDS
+
+    try:
+        parsed = float(configured)
+    except ValueError as exc:
+        raise ValueError(
+            "FINANCE_API_TIMEOUT_SECONDS must be a number."
+        ) from exc
+    return _validate_timeout(parsed)
 
 
 def _parse_ask_response(
@@ -389,6 +408,23 @@ def _parse_ask_response(
     _validate_intent_response(
         intent
     )
+    hybrid_metadata = parsed_response.get("hybrid_metadata")
+    if hybrid_metadata is not None and not isinstance(
+        hybrid_metadata,
+        dict,
+    ):
+        raise FinanceApiResponseError(
+            "Finance API response field 'hybrid_metadata' "
+            "must be an object or null."
+        )
+    if isinstance(hybrid_metadata, dict):
+        evidence_ids = hybrid_metadata.get("evidence_ids", [])
+        if not isinstance(evidence_ids, list) or any(
+            not isinstance(item, str) for item in evidence_ids
+        ):
+            raise FinanceApiResponseError(
+                "Finance API hybrid evidence_ids must be a string list."
+            )
 
     parsed_response.setdefault(
         "selected_flow",
@@ -401,6 +437,7 @@ def _parse_ask_response(
     )
     parsed_response.setdefault("session_id", None)
     parsed_response.setdefault("memory_status", None)
+    parsed_response.setdefault("hybrid_metadata", None)
 
     parsed_response.setdefault(
         "clarification_required",

@@ -13,7 +13,10 @@ from src.autonomous.agents.pnl_analysis_agent import PnLAnalysisAgent
 from src.autonomous.agents.revenue_variance_analysis_agent import (
     RevenueVarianceAnalysisAgent,
 )
-from src.autonomous.agents.reviewer_agent import ReviewerAgent
+from src.autonomous.agents.reviewer_agent import (
+    ReviewerAgent,
+    ReviewerAgentError,
+)
 from src.autonomous.agents.root_cause_recommendation_agent import (
     RootCauseRecommendationAgent,
 )
@@ -93,7 +96,9 @@ class AutonomousExecutionCoordinator:
         tracker = ExecutionUsageTracker(self._limits)
         registry = EvidenceRegistry()
         tool_results: list[ToolResult] = []
+        execution_stage = "initialization"
         try:
+            execution_stage = "usage_limits"
             for input_tokens, output_tokens, cost in llm_usage:
                 tracker.record_llm_usage(
                     input_tokens=input_tokens,
@@ -107,6 +112,7 @@ class AutonomousExecutionCoordinator:
                 if step.capability in self._specialists
             ]
             for step in specialist_steps:
+                execution_stage = step.capability
                 result = self._run_with_retry(
                     step.arguments.get("agent_name", step.capability),
                     lambda step=step: self._specialists[
@@ -129,6 +135,7 @@ class AutonomousExecutionCoordinator:
                 raise ValueError(
                     "Plan contains no executable finance specialist steps."
                 )
+            execution_stage = "reconciliation"
             reconciliation = self._reconciler.reconcile(registry)
             if not reconciliation.passed:
                 return _fallback(
@@ -144,6 +151,7 @@ class AutonomousExecutionCoordinator:
                 ordered,
                 "root_cause_recommendation",
             )
+            execution_stage = "diagnostics"
             diagnostics = self._run_with_retry(
                 diagnostic_step.arguments.get(
                     "agent_name",
@@ -161,6 +169,7 @@ class AutonomousExecutionCoordinator:
             )
 
             _required_step(ordered, "review")
+            execution_stage = "reviewer"
             review = self._run_with_retry(
                 "reviewer_agent",
                 lambda: self._reviewer.review(
@@ -173,6 +182,16 @@ class AutonomousExecutionCoordinator:
                 tracker,
                 tool_calls=0,
             )
+            reviewer_usage = self._reviewer.last_usage
+            if reviewer_usage is not None:
+                tracker.record_llm_usage(
+                    input_tokens=reviewer_usage.input_tokens,
+                    output_tokens=reviewer_usage.output_tokens,
+                    estimated_cost_usd=(
+                        reviewer_usage.estimated_cost_usd
+                        or 0.0
+                    ),
+                )
             if review.decision not in {
                 "approved",
                 "approved_with_caveats",
@@ -204,7 +223,10 @@ class AutonomousExecutionCoordinator:
             )
         except Exception as exc:
             return _fallback(
-                _safe_failure_reason(exc),
+                _safe_failure_reason(
+                    exc,
+                    stage=execution_stage,
+                ),
                 tracker,
             )
 
@@ -298,7 +320,33 @@ def _fallback(
     )
 
 
-def _safe_failure_reason(exc: Exception) -> str:
+def _safe_failure_reason(
+    exc: Exception,
+    *,
+    stage: str,
+) -> str:
     if isinstance(exc, ExecutionLimitExceededError):
         return str(exc)
+
+    current: BaseException | None = exc
+    while current is not None:
+        if isinstance(current, ExecutionLimitExceededError):
+            return str(current)
+        if isinstance(current, ReviewerAgentError):
+            return f"Reviewer failed: {current.failure_code}."
+        current = current.__cause__
+
+    stage_messages = {
+        "kpi_analysis": "KPI specialist failed.",
+        "pnl_analysis": "P&L specialist failed.",
+        "revenue_variance": "Revenue variance specialist failed.",
+        "gp_decomposition": "GP% decomposition specialist failed.",
+        "reconciliation": "Evidence reconciliation failed.",
+        "diagnostics": "Diagnostic agent failed.",
+        "reviewer": "Reviewer failed: unexpected_error.",
+        "usage_limits": "Autonomous usage validation failed.",
+        "initialization": "Autonomous initialization failed.",
+    }
+    if stage in stage_messages:
+        return stage_messages[stage]
     return "Autonomous execution failed; use deterministic fallback."

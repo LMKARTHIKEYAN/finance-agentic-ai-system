@@ -60,6 +60,8 @@ class ReportingScope(FrozenModel):
 
     start_date: date | None = None
     end_date: date | None = None
+    comparison_start_date: date | None = None
+    comparison_end_date: date | None = None
     category: str | None = None
 
     @model_validator(mode="after")
@@ -70,6 +72,15 @@ class ReportingScope(FrozenModel):
             and self.start_date > self.end_date
         ):
             raise ValueError("start_date cannot be after end_date.")
+        if (
+            self.comparison_start_date is not None
+            and self.comparison_end_date is not None
+            and self.comparison_start_date > self.comparison_end_date
+        ):
+            raise ValueError(
+                "comparison_start_date cannot be after "
+                "comparison_end_date."
+            )
         return self
 
 
@@ -83,6 +94,77 @@ class DatasetAvailability(FrozenModel):
     period_end: date | None = None
 
 
+class PlanStepArguments(FrozenModel):
+    """Allow-listed arguments an LLM may assign to a plan step."""
+
+    agent_name: str | None = None
+    tool_name: str | None = None
+    recommendation_tool_name: str | None = None
+    requested_kpis: list[str] | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    category: str | None = None
+    start_month: str | None = None
+    end_month: str | None = None
+    dimension: str | None = None
+    dimension_value: str | None = None
+    forecast_period: str | None = None
+    scenario_period: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unknown_arguments(cls, value: Any) -> Any:
+        """Reject unapproved fields with the established safety wording."""
+
+        if isinstance(value, dict):
+            allowed = {
+                "agent_name",
+                "tool_name",
+                "recommendation_tool_name",
+                "requested_kpis",
+                "start_date",
+                "end_date",
+                "category",
+                "start_month",
+                "end_month",
+                "dimension",
+                "dimension_value",
+                "forecast_period",
+                "scenario_period",
+            }
+            unknown = set(value) - allowed
+            if unknown:
+                raise ValueError(
+                    "unsupported step arguments: "
+                    f"{sorted(unknown)}."
+                )
+        return value
+
+    def to_execution_dict(self) -> dict[str, Any]:
+        """Return only explicitly populated execution arguments."""
+
+        return self.model_dump(exclude_none=True, mode="python")
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Provide read-only dictionary compatibility to existing agents."""
+
+        return self.to_execution_dict().get(key, default)
+
+    def keys(self) -> Any:
+        """Return populated argument names."""
+
+        return self.to_execution_dict().keys()
+
+    def __getitem__(self, key: str) -> Any:
+        return self.to_execution_dict()[key]
+
+    def __iter__(self) -> Any:
+        return iter(self.to_execution_dict())
+
+    def __len__(self) -> int:
+        return len(self.to_execution_dict())
+
+
 class PlanStep(FrozenModel):
     """One proposed specialist capability in a supervisor plan."""
 
@@ -90,7 +172,9 @@ class PlanStep(FrozenModel):
     capability: str = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
     required_evidence: tuple[str, ...] = ()
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    arguments: PlanStepArguments = Field(
+        default_factory=PlanStepArguments
+    )
 
     @model_validator(mode="after")
     def validate_dependencies(self) -> "PlanStep":

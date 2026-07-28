@@ -25,6 +25,9 @@ from src.autonomous.schemas import (
 )
 from src.llm.client import StructuredLLMClient
 from src.llm.schemas import (
+    LLMOutputLimitError,
+    LLMStructuredOutputError,
+    LLMTimeoutError,
     LLMRequestMetadata,
     LLMUsage,
     StructuredLLMResponse,
@@ -179,6 +182,60 @@ def test_reviewer_sends_compact_verified_evidence() -> None:
     }
 
 
+def test_reviewer_compacts_multi_period_pnl_evidence() -> None:
+    client = FakeReviewerClient(
+        ReviewResult(
+            decision="approved",
+            approved_answer="Approved.",
+        )
+    )
+    pnl_evidence = _evidence().model_copy(
+        update={
+            "compact_payload": {
+                "actual_pnl": [
+                    {
+                        "month": "2026-04",
+                        "revenue": 100,
+                        "net_profit": 20,
+                        "internal_detail": "exclude",
+                    },
+                    {
+                        "month": "2026-05",
+                        "revenue": 120,
+                        "net_profit": 25,
+                        "internal_detail": "exclude",
+                    },
+                ],
+                "budget_pnl": [{"large": "exclude"}],
+                "variance_pnl": [{"large": "exclude"}],
+            }
+        }
+    )
+
+    _review(client, evidence=(pnl_evidence,))
+    context = json.loads(
+        client.calls[0]["messages"][1]["content"]
+    )
+    compact_payload = context["evidence"][0]["compact_payload"]
+
+    assert compact_payload == {
+        "actual_pnl": [
+            {
+                "month": "2026-04",
+                "revenue": 100,
+                "net_profit": 20,
+            },
+            {
+                "month": "2026-05",
+                "revenue": 120,
+                "net_profit": 25,
+            },
+        ]
+    }
+    assert "budget_pnl" not in compact_payload
+    assert "variance_pnl" not in compact_payload
+
+
 def test_failed_reconciliation_short_circuits_without_llm() -> None:
     client = FakeReviewerClient(
         ReviewResult(decision="approved", approved_answer="unsafe")
@@ -254,13 +311,49 @@ def test_reviewer_wraps_provider_error_without_details() -> None:
         _review(client)
 
     assert "secret provider output" not in str(error.value)
+    assert error.value.failure_code == "unexpected_error"
 
 
 def test_reviewer_rejects_non_structured_output() -> None:
     client = FakeReviewerClient({"decision": "approved"})
 
-    with pytest.raises(ReviewerAgentError, match="invalid structured"):
+    with pytest.raises(
+        ReviewerAgentError,
+        match="invalid structured",
+    ) as error:
         _review(client)
+
+    assert error.value.failure_code == "structured_output_invalid"
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected_code"),
+    [
+        (LLMTimeoutError("private timeout"), "timeout"),
+        (
+            LLMOutputLimitError("private output"),
+            "output_token_limit",
+        ),
+        (
+            LLMStructuredOutputError("private schema"),
+            "structured_output_invalid",
+        ),
+    ],
+)
+def test_reviewer_classifies_safe_llm_failure_codes(
+    provider_error: Exception,
+    expected_code: str,
+) -> None:
+    client = FakeReviewerClient(
+        ReviewResult(decision="failed"),
+        error=provider_error,
+    )
+
+    with pytest.raises(ReviewerAgentError) as error:
+        _review(client)
+
+    assert error.value.failure_code == expected_code
+    assert "private" not in str(error.value)
 
 
 def test_reviewer_instructions_prohibit_finance_calculation_and_writes() -> None:

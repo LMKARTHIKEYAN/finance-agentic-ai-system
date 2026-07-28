@@ -13,6 +13,7 @@ from src.autonomous.execution_limits import (
     AutonomousExecutionLimits,
 )
 from src.autonomous.plan_validator import AutonomousPlanValidator
+from src.autonomous.plan_compiler import compile_supervisor_plan
 from src.autonomous.schemas import (
     AutonomousExecutionResult,
     DatasetAvailability,
@@ -20,6 +21,7 @@ from src.autonomous.schemas import (
     ReportingScope,
 )
 from src.autonomous.agents.supervisor_agent import FinanceSupervisorAgent
+from src.autonomous.agents.supervisor_agent import SupervisorAgentError
 
 
 class _WorkflowState(TypedDict, total=False):
@@ -62,12 +64,20 @@ def build_autonomous_graph(
                 datasets=state.get("datasets", ()),
                 validation_issues=state.get("validation_issues", ()),
             )
-            return {"plan": plan}
+            return {"plan": compile_supervisor_plan(plan)}
+        except SupervisorAgentError as exc:
+            return {
+                "route": "fallback",
+                "result": _graph_fallback(
+                    "Supervisor planning failed: "
+                    f"{exc.failure_code}."
+                ),
+            }
         except Exception:
             return {
                 "route": "fallback",
                 "result": _graph_fallback(
-                    "Supervisor planning failed."
+                    "Supervisor planning failed: unexpected_error."
                 ),
             }
 
@@ -82,10 +92,22 @@ def build_autonomous_graph(
             return {"route": "execute"}
         replan_count = state.get("replan_count", 0)
         if replan_count >= resolved_limits.max_replans:
+            issue_codes = sorted(
+                {
+                    _safe_issue_label(issue, state["plan"])
+                    for issue in validation.issues
+                }
+            )
+            issue_suffix = (
+                f": {', '.join(issue_codes)}"
+                if issue_codes
+                else ""
+            )
             return {
                 "route": "fallback",
                 "result": _graph_fallback(
-                    "Plan validation failed after replan limit."
+                    "Plan validation failed after replan limit"
+                    f"{issue_suffix}."
                 ),
             }
         return {
@@ -126,3 +148,28 @@ def _graph_fallback(reason: str) -> AutonomousExecutionResult:
         fallback_reason=reason,
         errors=(reason,),
     )
+
+
+def _safe_issue_label(issue: PlanValidationIssue, plan: Any) -> str:
+    """Return code, step, and allow-listed tool identity only."""
+
+    label = issue.code
+    if issue.step_id:
+        label += f"[{issue.step_id}"
+        step = next(
+            (
+                item
+                for item in getattr(plan, "steps", ())
+                if item.step_id == issue.step_id
+            ),
+            None,
+        )
+        tool_name = (
+            step.arguments.get("tool_name")
+            if step is not None
+            else None
+        )
+        if tool_name:
+            label += f":{tool_name}"
+        label += "]"
+    return label

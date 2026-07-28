@@ -139,6 +139,10 @@ def build_dashboard_response(
         kpi_cards
     )
 
+    if normalized_flow == "variance":
+        kpi_cards = []
+        kpi_table = None
+
     variance_table = _build_variance_table(
         variance_result
     )
@@ -786,13 +790,13 @@ def _build_gp_variance_category_table(
             "Actual COGS": row.get("actual_direct_cost"),
             "Actual Profit": row.get("actual_gross_profit"),
             "Actual GP%": row.get("actual_gp_percentage"),
-            "Volume Base": row.get("budget_volume"),
-            "Base Price per Unit": row.get("budget_price_per_unit"),
-            "Base COGS per Unit": row.get("budget_cost_per_unit"),
-            "Base Revenue": row.get("budget_revenue"),
-            "Base COGS": row.get("budget_direct_cost"),
-            "Base Profit": row.get("budget_gross_profit"),
-            "Base GP%": row.get("budget_gp_percentage"),
+            "Budget Volume": row.get("budget_volume"),
+            "Budget Price per Unit": row.get("budget_price_per_unit"),
+            "Budget COGS per Unit": row.get("budget_cost_per_unit"),
+            "Budget Revenue": row.get("budget_revenue"),
+            "Budget COGS": row.get("budget_direct_cost"),
+            "Budget Gross Profit": row.get("budget_gross_profit"),
+            "Budget GP%": row.get("budget_gp_percentage"),
             "Price Effect (pp)": row.get(
                 "price_effect_percentage_points"
             ),
@@ -802,7 +806,7 @@ def _build_gp_variance_category_table(
             "Check (pp)": row.get("check_percentage_points"),
             "Mix Indicator": row.get("mix_indicator"),
             "Mix Actual": row.get("actual_mix_percentage"),
-            "Mix Base": row.get("budget_mix_percentage"),
+            "Mix Budget": row.get("budget_mix_percentage"),
         }
         for row in source_rows
         if isinstance(row, dict)
@@ -824,28 +828,28 @@ def _build_gp_variance_portfolio_table(
 
     rows = [
         {
-            "Metric": "Base Revenue",
-            "Formula": "Σ (Base price × Base volume)",
+            "Metric": "Budget Revenue",
+            "Formula": "Σ (Budget price × Budget volume)",
             "Value": result.get("base_revenue"),
         },
         {
-            "Metric": "Base GP$",
-            "Formula": "Σ (Base volume × (Base price - Base cost))",
+            "Metric": "Budget GP$",
+            "Formula": "Σ (Budget volume × (Budget price - Budget cost))",
             "Value": result.get("base_gross_profit"),
         },
         {
-            "Metric": "Base GP%",
-            "Formula": "Base GP$ ÷ Base Revenue",
+            "Metric": "Budget GP%",
+            "Formula": "Budget GP$ ÷ Budget Revenue",
             "Value": result.get("budget_gp_percentage"),
         },
         {
             "Metric": "Mix-only Revenue",
-            "Formula": "Σ (Base price × Actual volume)",
+            "Formula": "Σ (Budget price × Actual volume)",
             "Value": result.get("mix_only_revenue"),
         },
         {
             "Metric": "Mix-only GP$",
-            "Formula": "Σ (Actual volume × (Base price - Base cost))",
+            "Formula": "Σ (Actual volume × (Budget price - Budget cost))",
             "Value": result.get("mix_only_gross_profit"),
         },
         {
@@ -859,8 +863,8 @@ def _build_gp_variance_portfolio_table(
             "Value": result.get("price_only_revenue"),
         },
         {
-            "Metric": "Price-only GP$ (A price, B cost)",
-            "Formula": "Σ (Actual volume × (Actual price - Base cost))",
+            "Metric": "Price-only GP$ (Actual price, Budget cost)",
+            "Formula": "Σ (Actual volume × (Actual price - Budget cost))",
             "Value": result.get("price_only_gross_profit"),
         },
         {
@@ -885,7 +889,7 @@ def _build_gp_variance_portfolio_table(
         },
         {
             "Metric": "Mix Effect (pp)",
-            "Formula": "Mix-only GP% - Base GP%",
+            "Formula": "Mix-only GP% - Budget GP%",
             "Value": result.get("mix_effect_percentage_points"),
         },
         {

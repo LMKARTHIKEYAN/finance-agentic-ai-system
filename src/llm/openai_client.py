@@ -12,6 +12,7 @@ from src.llm.client import LLMMessage, StructuredLLMClient
 from src.llm.schemas import (
     LLMBudgetExceededError,
     LLMError,
+    LLMOutputLimitError,
     LLMRequestMetadata,
     LLMStructuredOutputError,
     LLMTimeoutError,
@@ -123,6 +124,24 @@ class OpenAIStructuredLLMClient(StructuredLLMClient):
         parsed_output = getattr(response, "output_parsed", None)
 
         if not isinstance(parsed_output, validated_response_model):
+            incomplete_details = getattr(
+                response,
+                "incomplete_details",
+                None,
+            )
+            incomplete_reason = getattr(
+                incomplete_details,
+                "reason",
+                None,
+            )
+            if (
+                getattr(response, "status", None) == "incomplete"
+                and incomplete_reason == "max_output_tokens"
+            ):
+                raise LLMOutputLimitError(
+                    "OpenAI response reached the configured output-token "
+                    "limit."
+                )
             raise LLMStructuredOutputError(
                 "OpenAI did not return output matching the requested schema."
             )

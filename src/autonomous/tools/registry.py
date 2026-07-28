@@ -119,9 +119,9 @@ DEFAULT_TOOL_REGISTRY = ToolRegistry(
         ),
         ToolDefinition(
             "identify_supported_root_causes",
-            "Identify deterministic evidence-supported root causes.",
+            "Identify deterministic causes from reconciled finance evidence.",
             identify_supported_root_causes,
-            ("anomaly_result", "operations_result"),
+            (),
             "root_cause",
             False,
         ),

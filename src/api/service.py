@@ -23,8 +23,11 @@ from dataclasses import (
     dataclass,
     field,
     is_dataclass,
+    replace,
 )
 from enum import Enum
+from contextvars import ContextVar
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Callable
@@ -40,6 +43,7 @@ from src.api.finance_response_context import (
 from src.orchestrator.graph import run_finance_graph
 from src.orchestrator.intent_parser import (
     FinanceIntent,
+    ParsedPeriod,
     parse_finance_intent,
 )
 from src.orchestrator.planner import (
@@ -162,7 +166,7 @@ GraphExecutor = Callable[
     FinanceGraphState,
 ]
 AutonomousExecutor = Callable[
-    [str, AskServiceResult],
+    ...,
     AutonomousExecutionResult,
 ]
 
@@ -282,6 +286,12 @@ class FinanceAskService:
             raise TypeError(
                 "autonomous_shadow_mode must be a boolean."
             )
+        self._autonomous_context: ContextVar[
+            dict[str, Any] | None
+        ] = ContextVar(
+            "finance_autonomous_internal_context",
+            default=None,
+        )
 
     def ask(
         self,
@@ -290,6 +300,9 @@ class FinanceAskService:
     ) -> AskServiceResult:
         """Route safely between deterministic and autonomous execution."""
 
+        context_var = getattr(self, "_autonomous_context", None)
+        if context_var is not None:
+            context_var.set(None)
         deterministic = self._ask_deterministic(question, **kwargs)
         try:
             decision = self._complexity_classifier.classify(question)
@@ -324,9 +337,14 @@ class FinanceAskService:
             )
 
         try:
-            autonomous = self._autonomous_executor(
-                question,
-                deterministic,
+            autonomous = self._invoke_autonomous_executor(
+                question=question,
+                deterministic=deterministic,
+                internal_context=(
+                    context_var.get()
+                    if context_var is not None
+                    else None
+                ),
             )
         except Exception:
             return _with_hybrid_metadata(
@@ -373,6 +391,44 @@ class FinanceAskService:
             }
         )
         return _with_hybrid_metadata(deterministic, **metadata)
+
+    def _invoke_autonomous_executor(
+        self,
+        *,
+        question: str,
+        deterministic: AskServiceResult,
+        internal_context: dict[str, Any] | None,
+    ) -> AutonomousExecutionResult:
+        """Call new three-argument or legacy two-argument executors."""
+
+        executor = self._autonomous_executor
+        if executor is None:
+            raise RuntimeError("Autonomous executor is unavailable.")
+        try:
+            signature = inspect.signature(executor)
+            positional = [
+                item
+                for item in signature.parameters.values()
+                if item.kind
+                in {
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                }
+            ]
+            has_varargs = any(
+                item.kind is inspect.Parameter.VAR_POSITIONAL
+                for item in signature.parameters.values()
+            )
+        except (TypeError, ValueError):
+            positional = []
+            has_varargs = True
+        if has_varargs or len(positional) >= 3:
+            return executor(
+                question,
+                deterministic,
+                internal_context,
+            )
+        return executor(question, deterministic)
 
     def _ask_deterministic(
         self,
@@ -578,6 +634,15 @@ class FinanceAskService:
                 "filters": intent.to_filters(),
             }
 
+        context_var = getattr(self, "_autonomous_context", None)
+        if context_var is not None:
+            context_var.set(
+                {
+                    "graph_state": graph_result,
+                    "selected_flow": selected_flow,
+                }
+            )
+
         return AskServiceResult(
             answer=rag_result.response,
             sources=sources,
@@ -633,6 +698,7 @@ class FinanceAskService:
 
         selected_flow = intent.selected_flow
         filters = intent.to_filters()
+        data_filter_intent = self._comparison_filter_intent(intent)
 
         state: FinanceGraphState = {
             "user_request": question,
@@ -705,7 +771,7 @@ class FinanceAskService:
 
             filtered_operations = self._apply_intent_filters(
                 dataframe=operations_data,
-                intent=intent,
+                intent=data_filter_intent,
                 dataset_name="operations",
             )
 
@@ -724,7 +790,7 @@ class FinanceAskService:
 
             filtered_budget = self._apply_intent_filters(
                 dataframe=budget_data,
-                intent=intent,
+                intent=data_filter_intent,
                 dataset_name="budget",
             )
 
@@ -743,7 +809,7 @@ class FinanceAskService:
 
             filtered_budget = self._apply_intent_filters(
                 dataframe=budget_data,
-                intent=intent,
+                intent=data_filter_intent,
                 dataset_name="budget",
             )
 
@@ -783,7 +849,7 @@ class FinanceAskService:
             filtered_corporate_expenses = (
                 self._apply_intent_filters(
                     dataframe=corporate_expenses_data,
-                    intent=intent,
+                    intent=data_filter_intent,
                     dataset_name="corporate expenses",
                     apply_category=False,
                 )
@@ -800,7 +866,7 @@ class FinanceAskService:
             filtered_budget_corporate_expenses = (
                 self._apply_intent_filters(
                     dataframe=budget_corporate_expenses_data,
-                    intent=intent,
+                    intent=data_filter_intent,
                     dataset_name="budget corporate expenses",
                     apply_category=False,
                 )
@@ -826,6 +892,37 @@ class FinanceAskService:
             )
 
         return state
+
+    @staticmethod
+    def _comparison_filter_intent(intent: FinanceIntent) -> FinanceIntent:
+        """Retain primary and comparison months in trusted tool inputs."""
+
+        comparison = intent.comparison_period
+        if (
+            not comparison.start_date
+            or not comparison.end_date
+            or not intent.period.start_date
+            or not intent.period.end_date
+        ):
+            return intent
+        return replace(
+            intent,
+            period=ParsedPeriod(
+                start_date=min(
+                    intent.period.start_date,
+                    comparison.start_date,
+                ),
+                end_date=max(
+                    intent.period.end_date,
+                    comparison.end_date,
+                ),
+                display_value=(
+                    f"{comparison.display_value} to "
+                    f"{intent.period.display_value}"
+                ),
+                granularity="range",
+            ),
+        )
 
     @staticmethod
     def _build_clarification_result(

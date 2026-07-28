@@ -22,6 +22,10 @@ class LLMStructuredOutputError(LLMError):
     """Raised when an LLM response does not match the requested schema."""
 
 
+class LLMOutputLimitError(LLMError):
+    """Raised when an LLM response stops at its output-token limit."""
+
+
 class LLMBudgetExceededError(LLMError):
     """Raised when an LLM request or response exceeds an approved limit."""
 

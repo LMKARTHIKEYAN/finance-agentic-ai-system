@@ -634,6 +634,43 @@ def test_timeout_must_be_positive(
         )
 
 
+def test_environment_timeout_is_used(
+    monkeypatch: pytest.MonkeyPatch,
+    valid_api_response: dict,
+) -> None:
+    """Configured timeout should cover the autonomous execution window."""
+
+    captured: dict[str, float] = {}
+
+    def fake_urlopen(
+        request: object,
+        timeout: float,
+    ) -> FakeHttpResponse:
+        captured["timeout"] = timeout
+        return FakeHttpResponse(valid_api_response)
+
+    monkeypatch.setenv("FINANCE_API_TIMEOUT_SECONDS", "150")
+    monkeypatch.setattr(api_client, "urlopen", fake_urlopen)
+
+    ask_finance_question("Show KPI performance")
+
+    assert captured["timeout"] == 150.0
+
+
+def test_invalid_environment_timeout_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid environment configuration should fail before HTTP execution."""
+
+    monkeypatch.setenv("FINANCE_API_TIMEOUT_SECONDS", "invalid")
+
+    with pytest.raises(
+        ValueError,
+        match="FINANCE_API_TIMEOUT_SECONDS must be a number",
+    ):
+        ask_finance_question("Show KPI performance")
+
+
 def test_environment_base_url_is_used(
     monkeypatch: pytest.MonkeyPatch,
     valid_api_response: dict,

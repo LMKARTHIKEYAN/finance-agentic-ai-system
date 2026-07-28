@@ -30,13 +30,14 @@ def _evidence(
     evidence_id: str = "pnl-001",
     *,
     verified: bool = True,
+    compact_payload: dict[str, Any] | None = None,
 ) -> EvidenceRecord:
     return EvidenceRecord(
         evidence_id=evidence_id,
         source_tool="generate_validated_pnl_analysis",
         result_type="pnl",
         tool_status="completed",
-        compact_payload={"summary": "compact"},
+        compact_payload=compact_payload or {"summary": "compact"},
         reconciled=True,
         verified=verified,
     )
@@ -107,6 +108,47 @@ def test_diagnostic_agent_rejects_missing_internal_results() -> None:
             anomaly_result=None,
             operations_result={},
         )
+
+
+def test_diagnostic_agent_uses_multi_period_pnl_evidence() -> None:
+    result = RootCauseRecommendationAgent().execute(
+        _step(),
+        evidence=(
+            _evidence(
+                compact_payload={
+                    "actual_pnl": [
+                        {
+                            "month": "2026-03",
+                            "revenue": 100.0,
+                            "direct_cost": 60.0,
+                            "sales_marketing": 5.0,
+                            "other_opex": 4.0,
+                            "depreciation": 2.0,
+                            "interest": 1.0,
+                            "income_tax": 7.0,
+                            "net_profit": 21.0,
+                        },
+                        {
+                            "month": "2026-04",
+                            "revenue": 120.0,
+                            "direct_cost": 65.0,
+                            "sales_marketing": 6.0,
+                            "other_opex": 4.0,
+                            "depreciation": 2.0,
+                            "interest": 1.0,
+                            "income_tax": 10.0,
+                            "net_profit": 32.0,
+                        },
+                    ]
+                }
+            ),
+        ),
+        anomaly_result=None,
+        operations_result=None,
+    )
+
+    assert result.root_cause_result.payload["net_profit_change"] == 11.0
+    assert result.recommendation_result.payload["recommendations"]
 
 
 def test_diagnostic_agent_stops_when_root_cause_tool_fails() -> None:
