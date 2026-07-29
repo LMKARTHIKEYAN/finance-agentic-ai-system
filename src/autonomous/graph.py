@@ -64,7 +64,12 @@ def build_autonomous_graph(
                 datasets=state.get("datasets", ()),
                 validation_issues=state.get("validation_issues", ()),
             )
-            return {"plan": compile_supervisor_plan(plan)}
+            return {
+                "plan": compile_supervisor_plan(
+                    plan,
+                    request=state["request"],
+                )
+            }
         except SupervisorAgentError as exc:
             return {
                 "route": "fallback",
@@ -87,6 +92,7 @@ def build_autonomous_graph(
         validation = validator.validate(
             state["plan"],
             available_inputs=state.get("available_inputs", set()),
+            request=state["request"],
         )
         if validation.valid:
             return {"route": "execute"}

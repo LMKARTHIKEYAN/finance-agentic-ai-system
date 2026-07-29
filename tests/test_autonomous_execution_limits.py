@@ -57,6 +57,47 @@ def test_agent_limit_is_enforced() -> None:
         tracker.record_agent_run()
 
 
+def test_allowed_retry_does_not_consume_distinct_agent_limit() -> None:
+    tracker = ExecutionUsageTracker(
+        AutonomousExecutionLimits(
+            max_agents=2,
+            max_retries_per_agent=1,
+        )
+    )
+
+    tracker.record_agent_run("pnl")
+    tracker.record_agent_retry("pnl")
+    tracker.record_agent_run("pnl")
+    tracker.record_agent_run("reviewer")
+    tracker.record_agent_retry("reviewer")
+    tracker.record_agent_run("reviewer")
+
+    assert tracker.snapshot().agent_runs == 4
+
+    with pytest.raises(
+        ExecutionLimitExceededError,
+        match="execution attempts",
+    ):
+        tracker.record_agent_run("reviewer")
+
+
+def test_distinct_agent_limit_is_enforced_separately() -> None:
+    tracker = ExecutionUsageTracker(
+        AutonomousExecutionLimits(
+            max_agents=2,
+            max_retries_per_agent=1,
+        )
+    )
+    tracker.record_agent_run("pnl")
+    tracker.record_agent_run("reviewer")
+
+    with pytest.raises(
+        ExecutionLimitExceededError,
+        match="distinct",
+    ):
+        tracker.record_agent_run("third_agent")
+
+
 def test_replan_limit_is_enforced() -> None:
     tracker = ExecutionUsageTracker(
         AutonomousExecutionLimits(max_replans=2)

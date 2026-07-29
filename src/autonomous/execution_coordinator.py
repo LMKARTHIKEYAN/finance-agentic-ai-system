@@ -19,6 +19,7 @@ from src.autonomous.agents.reviewer_agent import (
 )
 from src.autonomous.agents.root_cause_recommendation_agent import (
     RootCauseRecommendationAgent,
+    RootCauseRecommendationAgentError,
 )
 from src.autonomous.evidence_registry import EvidenceRegistry
 from src.autonomous.execution_limits import (
@@ -26,6 +27,7 @@ from src.autonomous.execution_limits import (
     ExecutionLimitExceededError,
     ExecutionUsageTracker,
 )
+from src.autonomous.management_response import ManagementResponseComposer
 from src.autonomous.reconciliation import AutonomousReconciler
 from src.autonomous.schemas import (
     AutonomousExecutionResult,
@@ -55,6 +57,7 @@ class AutonomousExecutionCoordinator:
         diagnostics: RootCauseRecommendationAgent | None = None,
         specialist_agents: Mapping[str, Any] | None = None,
         reconciler: AutonomousReconciler | None = None,
+        response_composer: ManagementResponseComposer | None = None,
         limits: AutonomousExecutionLimits | None = None,
     ) -> None:
         if not isinstance(reviewer, ReviewerAgent):
@@ -73,6 +76,9 @@ class AutonomousExecutionCoordinator:
             }
         )
         self._reconciler = reconciler or AutonomousReconciler()
+        self._response_composer = (
+            response_composer or ManagementResponseComposer()
+        )
         self._limits = limits or AutonomousExecutionLimits()
 
     def execute(
@@ -81,6 +87,7 @@ class AutonomousExecutionCoordinator:
         *,
         context: FinanceDataContext,
         draft_answer: str,
+        original_request: str | None = None,
         anomaly_result: object,
         operations_result: object,
         revenue_variance_result: object | None = None,
@@ -92,6 +99,11 @@ class AutonomousExecutionCoordinator:
             raise TypeError("plan must be a SupervisorPlan.")
         if not isinstance(context, FinanceDataContext):
             raise TypeError("context must be FinanceDataContext.")
+        reviewed_request = (
+            original_request
+            if original_request is not None
+            else plan.objective
+        )
 
         tracker = ExecutionUsageTracker(self._limits)
         registry = EvidenceRegistry()
@@ -168,6 +180,12 @@ class AutonomousExecutionCoordinator:
                 tool_calls=2,
             )
 
+            execution_stage = "management_response"
+            grounded_draft = self._response_composer.compose(
+                diagnostics,
+                fallback_answer=draft_answer,
+            )
+
             _required_step(ordered, "review")
             execution_stage = "reviewer"
             review = self._run_with_retry(
@@ -177,7 +195,8 @@ class AutonomousExecutionCoordinator:
                     reconciliation=reconciliation,
                     evidence=evidence,
                     diagnostics=diagnostics,
-                    draft_answer=draft_answer,
+                    draft_answer=grounded_draft,
+                    original_request=reviewed_request,
                 ),
                 tracker,
                 tool_calls=0,
@@ -197,13 +216,13 @@ class AutonomousExecutionCoordinator:
                 "approved_with_caveats",
             }:
                 return _fallback(
-                    f"Reviewer decision: {review.decision}.",
+                    _review_failure_reason(review),
                     tracker,
                     reconciliation=reconciliation,
                     review=review,
                 )
 
-            answer = review.approved_answer or draft_answer
+            answer = review.approved_answer or grounded_draft
             management_response = ManagementResponse(
                 answer=answer,
                 evidence_ids=tuple(
@@ -242,7 +261,7 @@ class AutonomousExecutionCoordinator:
         last_error: Exception | None = None
         for attempt in range(attempts):
             try:
-                tracker.record_agent_run()
+                tracker.record_agent_run(agent_name)
                 for _ in range(tool_calls):
                     tracker.record_tool_call()
                 return operation()
@@ -334,6 +353,8 @@ def _safe_failure_reason(
             return str(current)
         if isinstance(current, ReviewerAgentError):
             return f"Reviewer failed: {current.failure_code}."
+        if isinstance(current, RootCauseRecommendationAgentError):
+            return f"Diagnostic agent failed: {current.failure_code}."
         current = current.__cause__
 
     stage_messages = {
@@ -343,6 +364,7 @@ def _safe_failure_reason(
         "gp_decomposition": "GP% decomposition specialist failed.",
         "reconciliation": "Evidence reconciliation failed.",
         "diagnostics": "Diagnostic agent failed.",
+        "management_response": "Management response composition failed.",
         "reviewer": "Reviewer failed: unexpected_error.",
         "usage_limits": "Autonomous usage validation failed.",
         "initialization": "Autonomous initialization failed.",
@@ -350,3 +372,23 @@ def _safe_failure_reason(
     if stage in stage_messages:
         return stage_messages[stage]
     return "Autonomous execution failed; use deterministic fallback."
+
+
+def _review_failure_reason(review: Any) -> str:
+    """Return a sanitized reviewer decision and issue categories."""
+
+    issue_codes = [
+        field_name
+        for field_name in (
+            "unsupported_claims",
+            "missing_evidence",
+            "reconciliation_issues",
+        )
+        if getattr(review, field_name, ())
+    ]
+    suffix = (
+        f" ({', '.join(issue_codes)})"
+        if issue_codes
+        else ""
+    )
+    return f"Reviewer decision: {review.decision}{suffix}."

@@ -6,7 +6,11 @@ from src.api.finance_response_context import (
     build_finance_response_context,
 )
 from src.api.schemas import AskResponse
-from src.api.service import AskServiceResult, FinanceAskService
+from src.api.service import (
+    AskServiceResult,
+    FinanceAskService,
+    _autonomous_metadata,
+)
 from src.autonomous.schemas import (
     AutonomousExecutionResult,
     ComplexityDecision,
@@ -125,6 +129,102 @@ def test_complex_request_returns_reviewed_autonomous_answer() -> None:
     assert received[0][1].answer == "Deterministic answer."
 
 
+def test_complex_margin_request_uses_gp_baseline_and_original_request() -> None:
+    baseline_questions: list[str] = []
+    autonomous_questions: list[str] = []
+    instance = service(
+        mode="autonomous",
+        executor=(
+            lambda question, deterministic: (
+                autonomous_questions.append(question)
+                or completed_result()
+            )
+        ),
+    )
+    instance._complexity_classifier = type(
+        "MarginClassifier",
+        (),
+        {
+            "classify": lambda self, request: ComplexityDecision(
+                execution_mode="autonomous",
+                request_type="decision_support",
+                confidence=1,
+                reasons=("test",),
+                fallback_flow="gp_variance",
+            )
+        },
+    )()
+    instance._ask_deterministic = (  # type: ignore[method-assign]
+        lambda question, **kwargs: (
+            baseline_questions.append(question)
+            or deterministic_result()
+        )
+    )
+    question = (
+        "Explain May 2026 margin changes versus April 2026 "
+        "and recommend management actions."
+    )
+
+    result = instance.ask(question)
+
+    assert result.hybrid_metadata["execution_mode"] == "autonomous"
+    assert baseline_questions == [
+        "Show GP% decomposition for May 2026 versus April 2026"
+    ]
+    assert autonomous_questions == [question]
+
+
+def test_complex_performance_request_uses_full_management_baseline() -> None:
+    baseline_questions: list[str] = []
+    instance = service(
+        mode="autonomous",
+        executor=lambda question, deterministic: completed_result(),
+    )
+    instance._complexity_classifier = type(
+        "PerformanceClassifier",
+        (),
+        {
+            "classify": lambda self, request: ComplexityDecision(
+                execution_mode="autonomous",
+                request_type="decision_support",
+                confidence=1,
+                reasons=("test",),
+                fallback_flow="kpi",
+            )
+        },
+    )()
+    instance._ask_deterministic = (  # type: ignore[method-assign]
+        lambda question, **kwargs: (
+            baseline_questions.append(question)
+            or deterministic_result()
+        )
+    )
+
+    instance.ask(
+        "Analyze May 2026 performance, identify financial risks, "
+        "and recommend actions."
+    )
+
+    assert baseline_questions == [
+        "Generate management report for May 2026"
+    ]
+
+
+def test_simple_request_keeps_original_deterministic_question() -> None:
+    deterministic_questions: list[str] = []
+    instance = service(mode="deterministic")
+    instance._ask_deterministic = (  # type: ignore[method-assign]
+        lambda question, **kwargs: (
+            deterministic_questions.append(question)
+            or deterministic_result()
+        )
+    )
+
+    instance.ask("Show May 2026 KPI")
+
+    assert deterministic_questions == ["Show May 2026 KPI"]
+
+
 def test_api_schema_remains_backward_compatible() -> None:
     response = AskResponse(
         answer="Existing answer",
@@ -132,6 +232,28 @@ def test_api_schema_remains_backward_compatible() -> None:
     )
 
     assert response.hybrid_metadata is None
+
+
+def test_autonomous_metadata_exposes_only_review_issue_counts() -> None:
+    metadata = _autonomous_metadata(
+        AutonomousExecutionResult(
+            status="fallback",
+            review_result=ReviewResult(
+                decision="failed",
+                unsupported_claims=("Private claim text.",),
+                missing_evidence=("private-id",),
+            ),
+            fallback_flow="deterministic_planner",
+            fallback_reason="Reviewer decision failed.",
+        )
+    )
+
+    assert metadata["review_issue_counts"] == {
+        "unsupported_claims": 1,
+        "missing_evidence": 1,
+    }
+    assert "Private claim text" not in str(metadata)
+    assert "private-id" not in str(metadata)
 
 
 def test_response_context_includes_only_safe_hybrid_metadata() -> None:

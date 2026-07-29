@@ -16,6 +16,7 @@ def identify_supported_root_causes(
     operations_result: Any | None = None,
     revenue_variance_result: Any | None = None,
     pnl_result: dict[str, Any] | None = None,
+    evidence_payloads: list[dict[str, Any]] | None = None,
     agent: Any | None = None,
 ) -> ToolResult:
     """Run the existing deterministic root-cause analysis."""
@@ -27,6 +28,17 @@ def identify_supported_root_causes(
             status="completed",
             payload=_identify_pnl_change_drivers(pnl_result),
         )
+    if evidence_payloads:
+        multi_evidence = _identify_multi_evidence_findings(
+            evidence_payloads
+        )
+        if multi_evidence is not None:
+            return ToolResult(
+                call_id="identify_supported_root_causes",
+                tool_name="identify_supported_root_causes",
+                status="completed",
+                payload=multi_evidence,
+            )
     if anomaly_result is None or operations_result is None:
         raise ValueError(
             "Operational diagnostics require anomaly_result and "
@@ -63,6 +75,19 @@ def generate_supported_recommendations(
             tool_name="generate_supported_recommendations",
             status="completed",
             payload=_pnl_driver_recommendations(root_cause_result),
+        )
+    if (
+        isinstance(root_cause_result, dict)
+        and root_cause_result.get("analysis_type")
+        == "multi_evidence_performance"
+    ):
+        return ToolResult(
+            call_id="generate_supported_recommendations",
+            tool_name="generate_supported_recommendations",
+            status="completed",
+            payload=_multi_evidence_recommendations(
+                root_cause_result
+            ),
         )
     recommendation_agent = (
         agent if agent is not None else RecommendationAgent()
@@ -163,6 +188,194 @@ def _pnl_driver_recommendations(
         )
     return {
         "analysis_type": "pnl_period_change_recommendations",
+        "recommendations": recommendations,
+    }
+
+
+def _identify_multi_evidence_findings(
+    evidence_payloads: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Extract existing calculated indicators from reconciled evidence."""
+
+    findings: list[dict[str, Any]] = []
+    for evidence in evidence_payloads:
+        if not isinstance(evidence, dict):
+            continue
+        evidence_id = evidence.get("evidence_id")
+        result_type = evidence.get("result_type")
+        payload = evidence.get("payload")
+        if (
+            not isinstance(evidence_id, str)
+            or not isinstance(result_type, str)
+            or not isinstance(payload, dict)
+        ):
+            continue
+
+        if result_type == "kpi":
+            selected_kpis = payload.get("selected_kpis")
+            if not isinstance(selected_kpis, list):
+                selected_kpis = []
+            for kpi in selected_kpis[:10]:
+                if not isinstance(kpi, dict):
+                    continue
+                _append_finding(
+                    findings,
+                    evidence_id=evidence_id,
+                    result_type=result_type,
+                    metric=kpi.get("display_name") or kpi.get("kpi"),
+                    value=kpi.get("value"),
+                    unit=kpi.get("unit"),
+                )
+        elif result_type == "revenue_variance":
+            for metric in (
+                "actual_revenue",
+                "budget_revenue",
+                "revenue_variance",
+                "price_effect",
+                "volume_effect",
+            ):
+                _append_finding(
+                    findings,
+                    evidence_id=evidence_id,
+                    result_type=result_type,
+                    metric=metric,
+                    value=payload.get(metric),
+                    unit="currency",
+                    risk=(
+                        metric == "revenue_variance"
+                        and _is_negative(payload.get(metric))
+                    ),
+                )
+        elif result_type == "gp_decomposition":
+            for metric in (
+                "budget_gp_percentage",
+                "actual_gp_percentage",
+                "mix_effect_percentage_points",
+                "price_effect_percentage_points",
+                "cost_effect_percentage_points",
+                "total_variance_percentage_points",
+            ):
+                _append_finding(
+                    findings,
+                    evidence_id=evidence_id,
+                    result_type=result_type,
+                    metric=metric,
+                    value=payload.get(metric),
+                    unit="percentage_points",
+                    risk=(
+                        metric == "total_variance_percentage_points"
+                        and _is_negative(payload.get(metric))
+                    ),
+                )
+        elif result_type == "pnl":
+            rows = payload.get("variance_pnl")
+            if isinstance(rows, list) and rows:
+                row = rows[-1] if isinstance(rows[-1], dict) else {}
+                for metric in (
+                    "revenue_variance",
+                    "gross_profit_variance",
+                    "ebitda_variance",
+                    "net_profit_variance",
+                ):
+                    _append_finding(
+                        findings,
+                        evidence_id=evidence_id,
+                        result_type=result_type,
+                        metric=metric,
+                        value=row.get(metric),
+                        unit="currency",
+                        risk=_is_negative(row.get(metric)),
+                    )
+
+    if not findings:
+        return None
+    return {
+        "analysis_type": "multi_evidence_performance",
+        "findings": findings,
+        "risk_findings": [
+            finding for finding in findings if finding["risk"]
+        ],
+        "evidence_ids": list(
+            dict.fromkeys(
+                finding["evidence_id"] for finding in findings
+            )
+        ),
+    }
+
+
+def _append_finding(
+    findings: list[dict[str, Any]],
+    *,
+    evidence_id: str,
+    result_type: str,
+    metric: Any,
+    value: Any,
+    unit: Any,
+    risk: bool = False,
+) -> None:
+    if (
+        not isinstance(metric, str)
+        or isinstance(value, bool)
+        or not isinstance(value, (int, float, str))
+    ):
+        return
+    findings.append(
+        {
+            "evidence_id": evidence_id,
+            "result_type": result_type,
+            "metric": metric,
+            "value": value,
+            "unit": unit if isinstance(unit, str) else "value",
+            "risk": risk,
+        }
+    )
+
+
+def _is_negative(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value < 0
+    )
+
+
+def _multi_evidence_recommendations(
+    root_cause_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Create controlled actions linked to deterministic risk findings."""
+
+    recommendations = []
+    for finding in root_cause_result.get("risk_findings", [])[:5]:
+        if not isinstance(finding, dict):
+            continue
+        metric = str(finding.get("metric", "performance indicator"))
+        recommendations.append(
+            {
+                "metric": metric,
+                "priority": "high",
+                "action": (
+                    "Investigate the adverse "
+                    f"{metric.replace('_', ' ')} movement and assign "
+                    "a management owner."
+                ),
+                "evidence_id": finding.get("evidence_id"),
+                "requires_human_approval": False,
+            }
+        )
+    if not recommendations:
+        recommendations.append(
+            {
+                "metric": "performance",
+                "priority": "medium",
+                "action": (
+                    "Monitor the reconciled performance indicators and "
+                    "validate emerging risks in the next review cycle."
+                ),
+                "requires_human_approval": False,
+            }
+        )
+    return {
+        "analysis_type": "multi_evidence_recommendations",
         "recommendations": recommendations,
     }
 

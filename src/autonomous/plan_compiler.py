@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+from src.agents.finance.kpi_agent import KPIAgent
 from src.autonomous.schemas import (
     PlanStep,
     ReportingScope,
     SupervisorPlan,
+)
+
+
+_DEFAULT_PERFORMANCE_KPIS = (
+    "total_orders",
+    "completed_orders",
+    "fulfillment_percentage",
+    "cancellation_percentage",
+    "actual_revenue",
+    "actual_aov",
 )
 
 
@@ -33,7 +44,11 @@ _TARGETS = {
 }
 
 
-def compile_supervisor_plan(plan: SupervisorPlan) -> SupervisorPlan:
+def compile_supervisor_plan(
+    plan: SupervisorPlan,
+    *,
+    request: str | None = None,
+) -> SupervisorPlan:
     """Canonicalize approved execution details without adding analysis."""
 
     if not isinstance(plan, SupervisorPlan):
@@ -59,11 +74,25 @@ def compile_supervisor_plan(plan: SupervisorPlan) -> SupervisorPlan:
             agent_name, tool_name, reconciliation = target
             arguments["agent_name"] = agent_name
             arguments["tool_name"] = tool_name
-            if step.capability == "pnl_analysis":
+            if step.capability == "kpi_analysis":
                 arguments = {
                     "agent_name": agent_name,
                     "tool_name": tool_name,
-                    **_trusted_pnl_month_arguments(
+                    "requested_kpis": list(
+                        _compiled_kpi_selection(
+                            arguments.get("requested_kpis"),
+                            request=request,
+                        )
+                    ),
+                }
+            elif step.capability in {
+                "pnl_analysis",
+                "gp_decomposition",
+            }:
+                arguments = {
+                    "agent_name": agent_name,
+                    "tool_name": tool_name,
+                    **_trusted_month_arguments(
                         plan.reporting_scope
                     ),
                 }
@@ -106,10 +135,53 @@ def compile_supervisor_plan(plan: SupervisorPlan) -> SupervisorPlan:
     )
 
 
-def _trusted_pnl_month_arguments(
+def _compiled_kpi_selection(
+    value: object,
+    *,
+    request: str | None,
+) -> tuple[str, ...]:
+    """Return a supported, non-empty deterministic KPI selection."""
+
+    if _is_broad_performance_request(request):
+        return _DEFAULT_PERFORMANCE_KPIS
+
+    requested = value if isinstance(value, list) else []
+    supported = set(KPIAgent.KPI_METADATA)
+    selected: list[str] = []
+    for item in requested:
+        if not isinstance(item, str):
+            continue
+        normalized = " ".join(item.strip().lower().split())
+        canonical = KPIAgent.KPI_ALIASES.get(
+            normalized,
+            normalized.replace(" ", "_"),
+        )
+        if canonical in supported and canonical not in selected:
+            selected.append(canonical)
+    return tuple(selected) or _DEFAULT_PERFORMANCE_KPIS
+
+
+def _is_broad_performance_request(request: str | None) -> bool:
+    if not isinstance(request, str):
+        return False
+    normalized = " ".join(request.lower().split())
+    return (
+        "performance" in normalized
+        and any(
+            term in normalized
+            for term in (
+                "risk",
+                "recommend",
+                "management action",
+            )
+        )
+    )
+
+
+def _trusted_month_arguments(
     scope: ReportingScope,
 ) -> dict[str, str]:
-    """Derive the executable P&L range from trusted parsed dates."""
+    """Derive an executable month range from trusted parsed dates."""
 
     primary_dates = tuple(
         value

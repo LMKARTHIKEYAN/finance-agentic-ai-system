@@ -94,6 +94,15 @@ def test_clear_complex_requests_use_autonomous_path(
     assert decision.request_type == request_type
 
 
+def test_margin_change_uses_gp_decomposition_fallback() -> None:
+    decision = ComplexityClassifier().classify(
+        "Explain May margin changes and recommend management actions."
+    )
+
+    assert decision.execution_mode == "autonomous"
+    assert decision.fallback_flow == "gp_variance"
+
+
 def test_clear_request_does_not_call_llm() -> None:
     fake = FakeStructuredClient(
         decision=ComplexityDecision(

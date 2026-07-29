@@ -31,9 +31,14 @@ class ReviewClient(StructuredLLMClient):
         *,
         error: Exception | None = None,
         usage: LLMUsage | None = None,
+        output: ReviewResult | None = None,
     ) -> None:
         self.error = error
         self.usage = usage or LLMUsage()
+        self.output = output or ReviewResult(
+            decision="approved",
+            approved_answer="Reviewed answer.",
+        )
         self.calls = 0
 
     @property
@@ -49,10 +54,7 @@ class ReviewClient(StructuredLLMClient):
         if self.error is not None:
             raise self.error
         return StructuredLLMResponse[ReviewResult](
-            output=ReviewResult(
-                decision="approved",
-                approved_answer="Reviewed answer.",
-            ),
+            output=self.output,
             usage=self.usage,
             metadata=LLMRequestMetadata(
                 provider="fake",
@@ -298,3 +300,28 @@ def test_coordinator_records_reviewer_token_and_cost_usage() -> None:
     assert result.usage.output_tokens == 20
     assert result.usage.total_tokens == 120
     assert result.usage.estimated_cost_usd == 0.001
+
+
+def test_coordinator_reports_sanitized_reviewer_issue_codes() -> None:
+    client = ReviewClient(
+        output=ReviewResult(
+            decision="failed",
+            unsupported_claims=("Private unsupported statement.",),
+            missing_evidence=("private-evidence-id",),
+        )
+    )
+
+    result = _execute(
+        _coordinator(
+            VarianceSpecialist([]),
+            review_client=client,
+        )
+    )
+
+    assert result.status == "fallback"
+    assert result.fallback_reason == (
+        "Reviewer decision: failed "
+        "(unsupported_claims, missing_evidence)."
+    )
+    assert "Private unsupported statement" not in result.fallback_reason
+    assert "private-evidence-id" not in result.fallback_reason

@@ -91,6 +91,11 @@ Runtime plan contract:
 - For a P&L diagnostic request, select only pnl_analysis,
   root_cause_recommendation, and review unless the request explicitly asks
   for KPI, revenue variance, or GP% decomposition.
+- A margin-change, GP%, or gross-margin request must include
+  gp_decomposition.
+- A broad performance request that asks for financial risks and
+  recommendations must include kpi_analysis, pnl_analysis,
+  revenue_variance, and gp_decomposition.
 - Do not select retrieval tools for finance calculations or diagnostics.
 """.strip()
     )

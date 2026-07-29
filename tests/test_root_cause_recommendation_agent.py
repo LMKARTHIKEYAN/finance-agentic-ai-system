@@ -101,13 +101,18 @@ def test_diagnostic_agent_rejects_unapproved_tools() -> None:
 
 
 def test_diagnostic_agent_rejects_missing_internal_results() -> None:
-    with pytest.raises(ValueError, match="anomaly_result"):
+    with pytest.raises(
+        RootCauseRecommendationAgentError,
+        match="Root-cause tool execution failed",
+    ) as error:
         RootCauseRecommendationAgent().execute(
             _step(),
             evidence=(_evidence(),),
             anomaly_result=None,
             operations_result={},
         )
+
+    assert error.value.failure_code == "root_cause_tool"
 
 
 def test_diagnostic_agent_uses_multi_period_pnl_evidence() -> None:
@@ -151,6 +156,40 @@ def test_diagnostic_agent_uses_multi_period_pnl_evidence() -> None:
     assert result.recommendation_result.payload["recommendations"]
 
 
+def test_diagnostic_agent_uses_gp_evidence_without_legacy_inputs() -> None:
+    result = RootCauseRecommendationAgent().execute(
+        _step(),
+        evidence=(
+            EvidenceRecord(
+                evidence_id="gp-001",
+                source_tool="calculate_validated_gp_decomposition",
+                result_type="gp_decomposition",
+                tool_status="completed",
+                compact_payload={
+                    "budget_gp_percentage": 30.0,
+                    "actual_gp_percentage": 28.0,
+                    "mix_effect_percentage_points": -0.5,
+                    "price_effect_percentage_points": -0.5,
+                    "cost_effect_percentage_points": -1.0,
+                    "total_variance_percentage_points": -2.0,
+                },
+                reconciled=True,
+                verified=True,
+            ),
+        ),
+        anomaly_result=None,
+        operations_result=None,
+    )
+
+    assert result.root_cause_result.payload["analysis_type"] == (
+        "multi_evidence_performance"
+    )
+    assert result.root_cause_result.payload["risk_findings"][0][
+        "metric"
+    ] == "total_variance_percentage_points"
+    assert result.recommendation_result.payload["recommendations"]
+
+
 def test_diagnostic_agent_stops_when_root_cause_tool_fails() -> None:
     recommendation_called = False
 
@@ -178,6 +217,7 @@ def test_diagnostic_agent_stops_when_root_cause_tool_fails() -> None:
 
     assert recommendation_called is False
     assert "private tool detail" not in str(error.value)
+    assert error.value.failure_code == "root_cause_tool"
 
 
 def test_diagnostic_agent_rejects_wrong_tool_result_identity() -> None:

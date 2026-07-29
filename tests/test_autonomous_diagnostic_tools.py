@@ -127,3 +127,63 @@ def test_pnl_recommendations_use_supported_driver_payload() -> None:
     )
 
     assert result.payload["recommendations"][0]["metric"] == "revenue"
+
+
+def test_multi_evidence_diagnostics_extract_supported_risks() -> None:
+    result = identify_supported_root_causes(
+        evidence_payloads=[
+            {
+                "evidence_id": "variance-001",
+                "result_type": "revenue_variance",
+                "payload": {
+                    "actual_revenue": 90.0,
+                    "budget_revenue": 100.0,
+                    "revenue_variance": -10.0,
+                    "price_effect": -6.0,
+                    "volume_effect": -4.0,
+                },
+            },
+            {
+                "evidence_id": "gp-001",
+                "result_type": "gp_decomposition",
+                "payload": {
+                    "budget_gp_percentage": 30.0,
+                    "actual_gp_percentage": 28.0,
+                    "total_variance_percentage_points": -2.0,
+                },
+            },
+        ]
+    )
+
+    assert result.payload["analysis_type"] == (
+        "multi_evidence_performance"
+    )
+    assert {
+        item["metric"]
+        for item in result.payload["risk_findings"]
+    } == {
+        "revenue_variance",
+        "total_variance_percentage_points",
+    }
+    assert result.payload["evidence_ids"] == [
+        "variance-001",
+        "gp-001",
+    ]
+
+
+def test_multi_evidence_recommendations_link_risk_evidence() -> None:
+    result = generate_supported_recommendations(
+        root_cause_result={
+            "analysis_type": "multi_evidence_performance",
+            "risk_findings": [
+                {
+                    "metric": "revenue_variance",
+                    "evidence_id": "variance-001",
+                }
+            ],
+        }
+    )
+
+    recommendation = result.payload["recommendations"][0]
+    assert recommendation["metric"] == "revenue_variance"
+    assert recommendation["evidence_id"] == "variance-001"

@@ -51,6 +51,10 @@ Return only a structured ReviewResult matching the supplied schema.
 Review rules:
 - Never calculate, change, estimate, or invent financial values.
 - Approve only claims supported by supplied verified evidence.
+- Verify that the draft directly answers the original user request.
+- Verify that evidence from every explicitly requested finance capability is
+  present. A margin request requires GP% decomposition evidence; a net-profit
+  request requires P&L evidence.
 - Check that diagnostic conclusions reference supplied evidence IDs.
 - Treat reconciliation issues, missing evidence, and unsupported claims as
   reasons to require replanning or fail the review.
@@ -108,6 +112,7 @@ Review rules:
         evidence: Sequence[EvidenceRecord],
         diagnostics: DiagnosticAnalysisResult,
         draft_answer: str,
+        original_request: str,
     ) -> ReviewResult:
         """Review one draft using reconciled, verified compact evidence."""
 
@@ -122,10 +127,19 @@ Review rules:
                 "diagnostics must be a DiagnosticAnalysisResult."
             )
         cleaned_answer = _required_text(draft_answer, "draft_answer")
+        cleaned_request = _required_text(
+            original_request,
+            "original_request",
+        )
         records = _validated_evidence_sequence(evidence)
         self._last_usage = None
 
-        precheck = _precheck(reconciliation, records, diagnostics)
+        precheck = _precheck(
+            reconciliation,
+            records,
+            diagnostics,
+            original_request=cleaned_request,
+        )
         if precheck is not None:
             return precheck
 
@@ -135,6 +149,7 @@ Review rules:
             evidence=records,
             diagnostics=diagnostics,
             draft_answer=cleaned_answer,
+            original_request=cleaned_request,
         )
         try:
             response = self._llm_client.generate_structured(
@@ -169,8 +184,10 @@ Review rules:
         evidence: tuple[EvidenceRecord, ...],
         diagnostics: DiagnosticAnalysisResult,
         draft_answer: str,
+        original_request: str,
     ) -> tuple[LLMMessage, ...]:
         context: dict[str, Any] = {
+            "original_request": original_request,
             "plan": plan.model_dump(mode="json"),
             "reconciliation": reconciliation.model_dump(mode="json"),
             "evidence": [
@@ -273,6 +290,87 @@ def _compact_finance_payload(
             },
         }
 
+    if result_type == "kpi":
+        selected_kpis = payload.get("selected_kpis")
+        return {
+            "selected_kpis": (
+                selected_kpis[:10]
+                if isinstance(selected_kpis, list)
+                else []
+            ),
+            "unavailable_kpis": payload.get(
+                "unavailable_kpis",
+                [],
+            ),
+            "unknown_kpis": payload.get(
+                "unknown_kpis",
+                [],
+            ),
+        }
+
+    if result_type == "revenue_variance":
+        return {
+            key: payload[key]
+            for key in (
+                "actual_orders",
+                "budget_orders",
+                "actual_revenue",
+                "budget_revenue",
+                "actual_aov",
+                "budget_aov",
+                "order_variance",
+                "revenue_variance",
+                "aov_variance",
+                "price_effect",
+                "volume_effect",
+                "new_discontinued_effect",
+                "variance_check",
+            )
+            if key in payload
+        }
+
+    if result_type == "gp_decomposition":
+        product_level = payload.get("product_level")
+        product_fields = (
+            "category",
+            "product",
+            "month",
+            "actual_gp_percentage",
+            "budget_gp_percentage",
+            "price_effect_percentage_points",
+            "cost_effect_percentage_points",
+            "check_percentage_points",
+        )
+        return {
+            **{
+                key: payload[key]
+                for key in (
+                    "budget_gp_percentage",
+                    "actual_gp_percentage",
+                    "mix_effect_percentage_points",
+                    "price_effect_percentage_points",
+                    "cost_effect_percentage_points",
+                    "total_variance_percentage_points",
+                    "reconciliation_status",
+                    "reconciliation_difference",
+                )
+                if key in payload
+            },
+            "product_level": (
+                [
+                    {
+                        field: row[field]
+                        for field in product_fields
+                        if field in row
+                    }
+                    for row in product_level[:10]
+                    if isinstance(row, dict)
+                ]
+                if isinstance(product_level, list)
+                else []
+            ),
+        }
+
     return payload
 
 
@@ -280,6 +378,8 @@ def _precheck(
     reconciliation: ReconciliationResult,
     evidence: tuple[EvidenceRecord, ...],
     diagnostics: DiagnosticAnalysisResult,
+    *,
+    original_request: str,
 ) -> ReviewResult | None:
     reconciliation_issues = tuple(
         check.details
@@ -313,7 +413,58 @@ def _precheck(
             decision="replan_required",
             missing_evidence=tuple(dict.fromkeys((*unusable, *missing))),
         )
+    required_types = _required_evidence_types(original_request)
+    available_types = {item.result_type for item in evidence}
+    missing_types = sorted(required_types - available_types)
+    if missing_types:
+        return ReviewResult(
+            decision="replan_required",
+            missing_evidence=tuple(
+                f"required:{item}" for item in missing_types
+            ),
+        )
     return None
+
+
+def _required_evidence_types(original_request: str) -> set[str]:
+    normalized = " ".join(original_request.lower().split())
+    broad_performance = (
+        "performance" in normalized
+        and any(
+            term in normalized
+            for term in ("risk", "recommend", "management action")
+        )
+    )
+    if broad_performance:
+        return {"kpi", "pnl", "revenue_variance", "gp_decomposition"}
+    if any(
+        term in normalized
+        for term in (
+            "gp%",
+            "gp percentage",
+            "gross margin",
+            "margin change",
+            "margin movement",
+        )
+    ):
+        return {"gp_decomposition"}
+    if any(
+        term in normalized
+        for term in ("pnl", "p&l", "profit and loss", "net profit")
+    ):
+        return {"pnl"}
+    if any(
+        term in normalized
+        for term in (
+            "actual vs budget",
+            "actual versus budget",
+            "revenue variance",
+        )
+    ):
+        return {"revenue_variance"}
+    if "kpi" in normalized:
+        return {"kpi"}
+    return set()
 
 
 def _validate_review_decision(result: ReviewResult) -> None:

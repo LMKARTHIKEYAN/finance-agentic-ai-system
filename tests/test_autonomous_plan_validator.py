@@ -260,3 +260,127 @@ def test_validator_does_not_mutate_plan() -> None:
     AutonomousPlanValidator().validate(plan)
 
     assert plan.model_dump() == before
+
+
+def test_empty_kpi_selection_is_rejected() -> None:
+    plan = _plan(
+        PlanStep(
+            step_id="kpi",
+            capability="kpi_analysis",
+            arguments={
+                "agent_name": "kpi_agent",
+                "tool_name": "calculate_validated_kpis",
+                "requested_kpis": [],
+            },
+        ),
+        PlanStep(
+            step_id="review",
+            capability="review",
+            depends_on=("kpi",),
+            arguments={"agent_name": "reviewer_agent"},
+        ),
+    )
+
+    result = AutonomousPlanValidator().validate(plan)
+
+    assert "missing_kpi_selection" in {
+        item.code for item in result.issues
+    }
+
+
+def test_unsupported_kpi_selection_is_rejected() -> None:
+    plan = _plan(
+        PlanStep(
+            step_id="kpi",
+            capability="kpi_analysis",
+            arguments={
+                "agent_name": "kpi_agent",
+                "tool_name": "calculate_validated_kpis",
+                "requested_kpis": ["invented_kpi"],
+            },
+        ),
+        PlanStep(
+            step_id="review",
+            capability="review",
+            depends_on=("kpi",),
+            arguments={"agent_name": "reviewer_agent"},
+        ),
+    )
+
+    result = AutonomousPlanValidator().validate(plan)
+
+    assert "unsupported_kpi_selection" in {
+        item.code for item in result.issues
+    }
+
+
+def test_margin_request_requires_gp_capability() -> None:
+    plan = _plan(
+        PlanStep(
+            step_id="pnl",
+            capability="pnl_analysis",
+            arguments={
+                "agent_name": "pnl_agent",
+                "tool_name": "generate_validated_pnl_analysis",
+            },
+        ),
+        PlanStep(
+            step_id="review",
+            capability="review",
+            depends_on=("pnl",),
+            arguments={"agent_name": "reviewer_agent"},
+        ),
+        reconciliations=("pnl_structure",),
+    )
+
+    result = AutonomousPlanValidator().validate(
+        plan,
+        request=(
+            "Explain May margin changes versus April and recommend actions."
+        ),
+        available_inputs={
+            "operations_data",
+            "budget_data",
+            "corporate_expenses_data",
+            "budget_corporate_expenses_data",
+        },
+    )
+
+    assert "missing_required_capability" in {
+        item.code for item in result.issues
+    }
+
+
+def test_broad_performance_requires_all_finance_capabilities() -> None:
+    plan = _plan(
+        PlanStep(
+            step_id="kpi",
+            capability="kpi_analysis",
+            arguments={
+                "agent_name": "kpi_agent",
+                "tool_name": "calculate_validated_kpis",
+                "requested_kpis": ["actual_revenue"],
+            },
+        ),
+        PlanStep(
+            step_id="review",
+            capability="review",
+            depends_on=("kpi",),
+            arguments={"agent_name": "reviewer_agent"},
+        ),
+    )
+
+    result = AutonomousPlanValidator().validate(
+        plan,
+        request=(
+            "Analyze May performance, identify financial risks, "
+            "and recommend actions."
+        ),
+    )
+
+    missing_capability_issues = [
+        item
+        for item in result.issues
+        if item.code == "missing_required_capability"
+    ]
+    assert len(missing_capability_issues) == 3

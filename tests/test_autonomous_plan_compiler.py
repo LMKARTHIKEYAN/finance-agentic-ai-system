@@ -127,3 +127,105 @@ def test_compiler_uses_primary_pnl_month_without_comparison() -> None:
 
     assert compiled.steps[0].arguments.start_month == "2026-05"
     assert compiled.steps[0].arguments.end_month == "2026-05"
+
+
+def test_compiler_uses_trusted_gp_decomposition_months() -> None:
+    plan = SupervisorPlan(
+        objective="Explain May margin versus April",
+        reporting_scope=ReportingScope(
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 31),
+            comparison_start_date=date(2026, 4, 1),
+            comparison_end_date=date(2026, 4, 30),
+        ),
+        steps=(
+            PlanStep(
+                step_id="gp",
+                capability="gp_decomposition",
+                arguments={
+                    "agent_name": "invented_agent",
+                    "tool_name": "invented_tool",
+                    "start_date": date(2025, 1, 1),
+                    "end_date": date(2025, 1, 31),
+                    "start_month": "2027-12",
+                    "end_month": "2027-01",
+                    "dimension": "invented_dimension",
+                },
+            ),
+        ),
+        expected_outputs=("management_answer",),
+    )
+
+    compiled = compile_supervisor_plan(plan)
+
+    assert compiled.steps[0].arguments.to_execution_dict() == {
+        "agent_name": "gp_decomposition_agent",
+        "tool_name": "calculate_validated_gp_decomposition",
+        "start_month": "2026-04",
+        "end_month": "2026-05",
+    }
+
+
+def test_compiler_enforces_default_broad_performance_kpis() -> None:
+    plan = SupervisorPlan(
+        objective="Analyze performance and risks",
+        steps=(
+            PlanStep(
+                step_id="kpi",
+                capability="kpi_analysis",
+                arguments={
+                    "requested_kpis": ["invented metric"],
+                    "dimension": "invented dimension",
+                },
+            ),
+        ),
+        expected_outputs=("management_answer",),
+    )
+
+    compiled = compile_supervisor_plan(
+        plan,
+        request=(
+            "Analyze May 2026 performance, identify financial risks, "
+            "and recommend actions."
+        ),
+    )
+
+    assert compiled.steps[0].arguments.to_execution_dict() == {
+        "agent_name": "kpi_agent",
+        "tool_name": "calculate_validated_kpis",
+        "requested_kpis": [
+            "total_orders",
+            "completed_orders",
+            "fulfillment_percentage",
+            "cancellation_percentage",
+            "actual_revenue",
+            "actual_aov",
+        ],
+    }
+
+
+def test_compiler_canonicalizes_explicit_supported_kpis() -> None:
+    plan = SupervisorPlan(
+        objective="Explain operational performance",
+        steps=(
+            PlanStep(
+                step_id="kpi",
+                capability="kpi_analysis",
+                arguments={
+                    "requested_kpis": [
+                        "Revenue",
+                        "Fulfillment Rate",
+                        "not supported",
+                    ]
+                },
+            ),
+        ),
+        expected_outputs=("management_answer",),
+    )
+
+    compiled = compile_supervisor_plan(plan)
+
+    assert compiled.steps[0].arguments.requested_kpis == [
+        "actual_revenue",
+        "fulfillment_percentage",
+    ]

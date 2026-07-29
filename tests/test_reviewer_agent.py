@@ -144,6 +144,7 @@ def _review(
         "evidence": (_evidence(),),
         "diagnostics": _diagnostics(),
         "draft_answer": "Profit improved because volume increased.",
+        "original_request": "Explain profit improvement.",
         **overrides,
     }
     return ReviewerAgent(client).review(**arguments)
@@ -180,6 +181,7 @@ def test_reviewer_sends_compact_verified_evidence() -> None:
     assert context["evidence"][0]["compact_payload"] == {
         "net_profit_variance": 25
     }
+    assert context["original_request"] == "Explain profit improvement."
 
 
 def test_reviewer_compacts_multi_period_pnl_evidence() -> None:
@@ -236,6 +238,57 @@ def test_reviewer_compacts_multi_period_pnl_evidence() -> None:
     assert "variance_pnl" not in compact_payload
 
 
+def test_reviewer_compacts_gp_product_and_portfolio_evidence() -> None:
+    client = FakeReviewerClient(
+        ReviewResult(
+            decision="approved",
+            approved_answer="Approved.",
+        )
+    )
+    gp_evidence = _evidence().model_copy(
+        update={
+            "result_type": "gp_decomposition",
+            "compact_payload": {
+                "budget_gp_percentage": 30.0,
+                "actual_gp_percentage": 32.0,
+                "total_variance_percentage_points": 2.0,
+                "reconciliation_status": "PASS",
+                "reconciliation_difference": 0.0,
+                "product_level": [
+                    {
+                        "category": "2W",
+                        "actual_gp_percentage": 32.0,
+                        "budget_gp_percentage": 30.0,
+                        "large_internal_detail": "exclude",
+                    }
+                ],
+                "category_analysis": [{"large": "exclude"}],
+            },
+        }
+    )
+
+    _review(
+        client,
+        evidence=(gp_evidence,),
+        diagnostics=_diagnostics(),
+        original_request="Explain margin changes.",
+    )
+    context = json.loads(
+        client.calls[0]["messages"][1]["content"]
+    )
+    compact_payload = context["evidence"][0]["compact_payload"]
+
+    assert compact_payload["actual_gp_percentage"] == 32.0
+    assert compact_payload["product_level"] == [
+        {
+            "category": "2W",
+            "actual_gp_percentage": 32.0,
+            "budget_gp_percentage": 30.0,
+        }
+    ]
+    assert "category_analysis" not in compact_payload
+
+
 def test_failed_reconciliation_short_circuits_without_llm() -> None:
     client = FakeReviewerClient(
         ReviewResult(decision="approved", approved_answer="unsafe")
@@ -275,6 +328,28 @@ def test_missing_diagnostic_evidence_short_circuits() -> None:
 
     assert result.decision == "replan_required"
     assert result.missing_evidence == ("unknown-999",)
+    assert client.calls == []
+
+
+def test_margin_request_requires_gp_decomposition_evidence() -> None:
+    client = FakeReviewerClient(
+        ReviewResult(
+            decision="approved",
+            approved_answer="unsafe",
+        )
+    )
+
+    result = _review(
+        client,
+        original_request=(
+            "Explain May margin changes and recommend actions."
+        ),
+    )
+
+    assert result.decision == "replan_required"
+    assert result.missing_evidence == (
+        "required:gp_decomposition",
+    )
     assert client.calls == []
 
 

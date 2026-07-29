@@ -186,8 +186,13 @@ class AutonomousReconciler:
                     evidence_ids=(record.evidence_id,),
                 )
             )
+            reconciliation_status = payload.get(
+                "reconciliation_status"
+            )
             status_passed = (
-                payload.get("reconciliation_status") == "passed"
+                isinstance(reconciliation_status, str)
+                and reconciliation_status.strip().lower()
+                in {"pass", "passed"}
                 and _within_tolerance(
                     payload.get("reconciliation_difference"),
                     self._gp_tolerance,

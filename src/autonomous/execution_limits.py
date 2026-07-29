@@ -46,6 +46,7 @@ class ExecutionUsageTracker:
         self._clock = clock
         self._started_at = clock()
         self._agent_runs = 0
+        self._agent_names: set[str] = set()
         self._replans = 0
         self._tool_calls = 0
         self._agent_retries: dict[str, int] = {}
@@ -58,12 +59,26 @@ class ExecutionUsageTracker:
     def limits(self) -> AutonomousExecutionLimits:
         return self._limits
 
-    def record_agent_run(self) -> None:
+    def record_agent_run(self, agent_name: str | None = None) -> None:
         self.check_time()
-        if self._agent_runs >= self._limits.max_agents:
+        cleaned_name = (
+            _required_text(agent_name, "agent_name")
+            if agent_name is not None
+            else f"anonymous_agent_{self._agent_runs + 1}"
+        )
+        next_names = {*self._agent_names, cleaned_name}
+        if len(next_names) > self._limits.max_agents:
             raise ExecutionLimitExceededError(
-                "Maximum autonomous agent runs exceeded."
+                "Maximum distinct autonomous agents exceeded."
             )
+        maximum_runs = self._limits.max_agents * (
+            self._limits.max_retries_per_agent + 1
+        )
+        if self._agent_runs >= maximum_runs:
+            raise ExecutionLimitExceededError(
+                "Maximum autonomous agent execution attempts exceeded."
+            )
+        self._agent_names = next_names
         self._agent_runs += 1
 
     def record_replan(self) -> None:

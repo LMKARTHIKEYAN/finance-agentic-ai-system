@@ -555,6 +555,9 @@ class HybridExecutionMetadata(BaseModel):
     fallback_used: bool = False
     fallback_reason: str | None = None
     review_decision: str | None = None
+    review_issue_counts: dict[str, int] = Field(
+        default_factory=dict
+    )
     evidence_ids: list[str] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)
 

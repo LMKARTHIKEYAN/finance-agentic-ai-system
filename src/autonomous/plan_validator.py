@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Any
 
+from src.agents.finance.kpi_agent import KPIAgent
 from src.autonomous.execution_limits import AutonomousExecutionLimits
 from src.autonomous.schemas import (
     PlanValidationIssue,
@@ -50,6 +51,7 @@ class AutonomousPlanValidator:
         plan: SupervisorPlan,
         *,
         available_inputs: Collection[str] = (),
+        request: str | None = None,
     ) -> PlanValidationResult:
         """Validate a plan without executing it or mutating its contents."""
 
@@ -62,6 +64,11 @@ class AutonomousPlanValidator:
         available = set(available_inputs)
 
         self._validate_cycles(plan, issues)
+        _validate_required_capabilities(
+            plan,
+            request=request,
+            issues=issues,
+        )
 
         for step in plan.steps:
             arguments = step.arguments
@@ -111,6 +118,35 @@ class AutonomousPlanValidator:
                             step.step_id,
                         )
                     )
+
+                if tool_name == "calculate_validated_kpis":
+                    requested_kpis = arguments.get(
+                        "requested_kpis"
+                    )
+                    if (
+                        not isinstance(requested_kpis, list)
+                        or not requested_kpis
+                    ):
+                        issues.append(
+                            _error(
+                                "missing_kpi_selection",
+                                "KPI analysis requires at least one "
+                                "supported KPI.",
+                                step.step_id,
+                            )
+                        )
+                    elif any(
+                        not isinstance(item, str)
+                        or item not in KPIAgent.KPI_METADATA
+                        for item in requested_kpis
+                    ):
+                        issues.append(
+                            _error(
+                                "unsupported_kpi_selection",
+                                "KPI analysis contains an unsupported KPI.",
+                                step.step_id,
+                            )
+                        )
 
                 required_reconciliation = (
                     _RECONCILIATION_BY_TOOL.get(tool_name)
@@ -244,6 +280,72 @@ def _scope_override_is_inconsistent(
 def _is_finance_capability(capability: str) -> bool:
     normalized = capability.lower()
     return any(term in normalized for term in _FINANCE_CAPABILITY_TERMS)
+
+
+def _validate_required_capabilities(
+    plan: SupervisorPlan,
+    *,
+    request: str | None,
+    issues: list[PlanValidationIssue],
+) -> None:
+    required = _required_capabilities(request)
+    selected = {step.capability for step in plan.steps}
+    for capability in sorted(required - selected):
+        issues.append(
+            _error(
+                "missing_required_capability",
+                "Plan does not cover a finance capability explicitly "
+                f"required by the request: {capability}.",
+            )
+        )
+
+
+def _required_capabilities(request: str | None) -> set[str]:
+    if not isinstance(request, str):
+        return set()
+    normalized = " ".join(request.lower().split())
+    broad_performance = (
+        "performance" in normalized
+        and any(
+            term in normalized
+            for term in ("risk", "recommend", "management action")
+        )
+    )
+    if broad_performance:
+        return {
+            "kpi_analysis",
+            "pnl_analysis",
+            "revenue_variance",
+            "gp_decomposition",
+        }
+    if any(
+        term in normalized
+        for term in (
+            "gp%",
+            "gp percentage",
+            "gross margin",
+            "margin change",
+            "margin movement",
+        )
+    ):
+        return {"gp_decomposition"}
+    if any(
+        term in normalized
+        for term in ("pnl", "p&l", "profit and loss", "net profit")
+    ):
+        return {"pnl_analysis"}
+    if any(
+        term in normalized
+        for term in (
+            "actual vs budget",
+            "actual versus budget",
+            "revenue variance",
+        )
+    ):
+        return {"revenue_variance"}
+    if "kpi" in normalized:
+        return {"kpi_analysis"}
+    return set()
 
 
 def _optional_text(value: Any) -> str | None:

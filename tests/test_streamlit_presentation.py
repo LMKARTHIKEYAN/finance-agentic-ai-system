@@ -97,6 +97,33 @@ def test_hybrid_status_presents_deterministic_fallback() -> None:
     )
 
 
+def test_hybrid_status_presents_safe_reviewer_failure_counts() -> None:
+    messages = _build_hybrid_status_messages(
+        {
+            "hybrid_metadata": {
+                "review_decision": "failed",
+                "review_issue_counts": {
+                    "unsupported_claims": 2,
+                    "missing_evidence": 1,
+                },
+            }
+        }
+    )
+
+    assert (
+        "error",
+        "Reviewer status: Failed",
+    ) in messages
+    assert (
+        "warning",
+        "Reviewer finding: Unsupported Claims (2).",
+    ) in messages
+    assert (
+        "warning",
+        "Reviewer finding: Missing Evidence (1).",
+    ) in messages
+
+
 def test_pnl_table_is_presented_vertically() -> None:
     dataframe = pd.DataFrame(
         [

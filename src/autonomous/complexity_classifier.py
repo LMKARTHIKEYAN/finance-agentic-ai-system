@@ -202,7 +202,13 @@ def _resolve_complex_request_type(normalized: str) -> str:
 def _infer_fallback_flow(normalized: str) -> str:
     if any(
         value in normalized
-        for value in ("gp%", "gp percentage", "gross margin")
+        for value in (
+            "gp%",
+            "gp percentage",
+            "gross margin",
+            "margin change",
+            "margin movement",
+        )
     ):
         return "gp_variance"
     if any(

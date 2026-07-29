@@ -103,7 +103,7 @@ def test_six_agent_run_limit_is_enforced() -> None:
 
     with pytest.raises(
         ExecutionLimitExceededError,
-        match="agent runs",
+        match="distinct autonomous agents",
     ):
         tracker.record_agent_run()
 

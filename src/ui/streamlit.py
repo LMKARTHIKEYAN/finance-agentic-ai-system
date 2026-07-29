@@ -786,9 +786,36 @@ def _build_hybrid_status_messages(
         )
     review = metadata.get("review_decision")
     if review:
-        messages.append(
-            ("success", f"Reviewer status: {_humanize(review)}")
+        review_level = (
+            "success"
+            if review in {
+                "approved",
+                "approved_with_caveats",
+            }
+            else "error"
         )
+        messages.append(
+            (
+                review_level,
+                f"Reviewer status: {_humanize(review)}",
+            )
+        )
+    issue_counts = metadata.get("review_issue_counts", {})
+    if isinstance(issue_counts, dict):
+        for issue_name in (
+            "unsupported_claims",
+            "missing_evidence",
+            "reconciliation_issues",
+        ):
+            count = issue_counts.get(issue_name)
+            if isinstance(count, int) and count > 0:
+                messages.append(
+                    (
+                        "warning",
+                        f"Reviewer finding: {_humanize(issue_name)} "
+                        f"({count}).",
+                    )
+                )
     evidence_ids = metadata.get("evidence_ids", [])
     if isinstance(evidence_ids, list) and evidence_ids:
         messages.append(

@@ -137,6 +137,28 @@ def test_gp_decomposition_requires_both_levels_and_passed_bridge() -> None:
     assert AutonomousReconciler().reconcile(registry).passed is True
 
 
+def test_gp_decomposition_accepts_real_agent_pass_status() -> None:
+    registry = EvidenceRegistry()
+    _register(
+        registry,
+        "gp_decomposition",
+        {
+            "product_level": [{"category": "2W"}],
+            "portfolio_level": {"actual_gp_percentage": 30},
+            "reconciliation_status": "PASS",
+            "reconciliation_difference": 0,
+        },
+    )
+
+    result = AutonomousReconciler().reconcile(registry)
+
+    assert result.passed is True
+    assert any(
+        item.name.endswith(":gp_bridge") and item.passed
+        for item in result.checks
+    )
+
+
 def test_failed_gp_bridge_fails() -> None:
     registry = EvidenceRegistry()
     _register(
@@ -145,7 +167,7 @@ def test_failed_gp_bridge_fails() -> None:
         {
             "product_level": [],
             "portfolio_level": {},
-            "reconciliation_status": "failed",
+            "reconciliation_status": "FAIL",
             "reconciliation_difference": 1,
         },
     )

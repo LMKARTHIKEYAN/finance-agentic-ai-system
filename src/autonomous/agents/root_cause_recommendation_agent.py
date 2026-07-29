@@ -16,6 +16,10 @@ from src.autonomous.tools.diagnostic_tools import (
 class RootCauseRecommendationAgentError(RuntimeError):
     """Raised when controlled diagnostic execution cannot complete."""
 
+    def __init__(self, message: str, *, failure_code: str) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
+
 
 class DiagnosticAnalysisResult(BaseModel):
     """Deterministic diagnostic results linked to verified evidence."""
@@ -78,26 +82,35 @@ class RootCauseRecommendationAgent:
             ),
             None,
         )
-        if (
-            pnl_evidence is None
-            and (anomaly_result is None or operations_result is None)
-        ):
-            raise ValueError(
-                "Diagnostics require reconciled multi-period P&L evidence "
-                "or both anomaly_result and operations_result."
-            )
-
+        evidence_payloads = [
+            {
+                "evidence_id": item.evidence_id,
+                "result_type": item.result_type,
+                "payload": item.compact_payload,
+            }
+            for item in verified_evidence
+        ]
         try:
             root_cause_result = self._root_cause_tool(
                 anomaly_result=anomaly_result,
                 operations_result=operations_result,
                 revenue_variance_result=revenue_variance_result,
                 pnl_result=pnl_evidence,
+                evidence_payloads=evidence_payloads,
             )
             _validate_tool_result(
                 root_cause_result,
                 self.root_cause_tool_name,
             )
+        except RootCauseRecommendationAgentError:
+            raise
+        except Exception as exc:
+            raise RootCauseRecommendationAgentError(
+                "Root-cause tool execution failed.",
+                failure_code="root_cause_tool",
+            ) from exc
+
+        try:
             recommendation_result = self._recommendation_tool(
                 root_cause_result=root_cause_result.payload,
             )
@@ -109,7 +122,8 @@ class RootCauseRecommendationAgent:
             raise
         except Exception as exc:
             raise RootCauseRecommendationAgentError(
-                "Diagnostic tool execution failed."
+                "Recommendation tool execution failed.",
+                failure_code="recommendation_tool",
             ) from exc
 
         return DiagnosticAnalysisResult(
@@ -181,13 +195,16 @@ def _validate_tool_result(
 ) -> None:
     if not isinstance(result, ToolResult):
         raise RootCauseRecommendationAgentError(
-            "Diagnostic tool returned an invalid result."
+            "Diagnostic tool returned an invalid result.",
+            failure_code="invalid_tool_result",
         )
     if result.tool_name != expected_tool_name:
         raise RootCauseRecommendationAgentError(
-            "Diagnostic tool returned an unexpected tool identity."
+            "Diagnostic tool returned an unexpected tool identity.",
+            failure_code="unexpected_tool_identity",
         )
     if result.status != "completed":
         raise RootCauseRecommendationAgentError(
-            "Diagnostic tool did not complete successfully."
+            "Diagnostic tool did not complete successfully.",
+            failure_code="tool_not_completed",
         )

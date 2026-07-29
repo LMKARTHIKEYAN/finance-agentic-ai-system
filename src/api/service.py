@@ -73,14 +73,25 @@ def _autonomous_metadata(
         raise TypeError(
             "autonomous_executor must return AutonomousExecutionResult."
         )
+    review = result.review_result
+    review_issue_counts = {
+        field_name: len(getattr(review, field_name))
+        for field_name in (
+            "unsupported_claims",
+            "missing_evidence",
+            "reconciliation_issues",
+        )
+        if review is not None and getattr(review, field_name)
+    }
     return {
         "fallback_used": result.status == "fallback",
         "fallback_reason": result.fallback_reason,
         "review_decision": (
-            result.review_result.decision
-            if result.review_result is not None
+            review.decision
+            if review is not None
             else None
         ),
+        "review_issue_counts": review_issue_counts,
         "evidence_ids": [
             item.evidence_id for item in result.evidence
         ],
@@ -303,10 +314,13 @@ class FinanceAskService:
         context_var = getattr(self, "_autonomous_context", None)
         if context_var is not None:
             context_var.set(None)
-        deterministic = self._ask_deterministic(question, **kwargs)
         try:
             decision = self._complexity_classifier.classify(question)
         except Exception:
+            deterministic = self._ask_deterministic(
+                question,
+                **kwargs,
+            )
             return _with_hybrid_metadata(
                 deterministic,
                 execution_mode="deterministic",
@@ -314,6 +328,20 @@ class FinanceAskService:
                 fallback_used=True,
                 fallback_reason="Complexity classification failed.",
             )
+
+        deterministic_question = question
+        if decision.execution_mode == "autonomous":
+            deterministic_question = (
+                self._build_autonomous_baseline_question(
+                    question,
+                    fallback_flow=decision.fallback_flow,
+                    request_type=decision.request_type,
+                )
+            )
+        deterministic = self._ask_deterministic(
+            deterministic_question,
+            **kwargs,
+        )
 
         if decision.execution_mode != "autonomous":
             return _with_hybrid_metadata(
@@ -391,6 +419,56 @@ class FinanceAskService:
             }
         )
         return _with_hybrid_metadata(deterministic, **metadata)
+
+    @staticmethod
+    def _build_autonomous_baseline_question(
+        question: str,
+        *,
+        fallback_flow: str,
+        request_type: str,
+    ) -> str:
+        """Build a parseable deterministic context request for autonomy."""
+
+        try:
+            intent = parse_finance_intent(question)
+        except (TypeError, ValueError):
+            return question
+
+        period = intent.period.display_value
+        if not period:
+            return question
+
+        normalized_flow = fallback_flow.strip().lower()
+        if (
+            normalized_flow in {"unknown", "kpi"}
+            and request_type in {
+                "decision_support",
+                "multi_analysis",
+            }
+        ):
+            normalized_flow = "full"
+
+        baseline_actions = {
+            "kpi": "Show KPI",
+            "pnl": "Generate P&L",
+            "variance": "Compare Actual versus Budget",
+            "gp_variance": "Show GP% decomposition",
+            "budget": "Show budget",
+            "forecast": "Show forecast",
+            "scenario": "Show scenario",
+            "full": "Generate management report",
+        }
+        action = baseline_actions.get(normalized_flow)
+        if action is None:
+            return question
+
+        baseline = f"{action} for {period}"
+        comparison = intent.comparison_period.display_value
+        if comparison:
+            baseline += f" versus {comparison}"
+        if intent.category:
+            baseline += f" for {intent.category}"
+        return baseline
 
     def _invoke_autonomous_executor(
         self,

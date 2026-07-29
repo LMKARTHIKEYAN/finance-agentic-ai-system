@@ -46,6 +46,7 @@ class AutonomousServiceExecutor:
                     "available_inputs": set(context.available_inputs),
                     "execution_arguments": {
                         "context": context.finance_context,
+                        "original_request": question.strip(),
                         "draft_answer": context.draft_answer,
                         "anomaly_result": context.anomaly_result,
                         "operations_result": context.operations_result,
