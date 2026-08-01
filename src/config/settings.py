@@ -23,6 +23,52 @@ class Settings:
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
 
+    FINANCE_DATA_SOURCE: str = os.getenv(
+        "FINANCE_DATA_SOURCE",
+        "local",
+    ).strip().lower()
+
+    SNOWFLAKE_ACCOUNT: str = os.getenv(
+        "SNOWFLAKE_ACCOUNT",
+        "",
+    ).strip()
+    SNOWFLAKE_USER: str = os.getenv(
+        "SNOWFLAKE_USER",
+        "",
+    ).strip()
+    SNOWFLAKE_PASSWORD: str = os.getenv(
+        "SNOWFLAKE_PASSWORD",
+        "",
+    )
+    SNOWFLAKE_WAREHOUSE: str = os.getenv(
+        "SNOWFLAKE_WAREHOUSE",
+        "FINANCE_AI_WH",
+    ).strip()
+    SNOWFLAKE_DATABASE: str = os.getenv(
+        "SNOWFLAKE_DATABASE",
+        "FINANCE_AI",
+    ).strip()
+    SNOWFLAKE_SCHEMA: str = os.getenv(
+        "SNOWFLAKE_SCHEMA",
+        "ANALYTICS",
+    ).strip()
+    SNOWFLAKE_ROLE: str = os.getenv(
+        "SNOWFLAKE_ROLE",
+        "FINANCE_AI_APP_ROLE",
+    ).strip()
+    SNOWFLAKE_CONNECT_TIMEOUT_SECONDS: int = int(
+        os.getenv(
+            "SNOWFLAKE_CONNECT_TIMEOUT_SECONDS",
+            "10",
+        )
+    )
+    SNOWFLAKE_QUERY_TIMEOUT_SECONDS: int = int(
+        os.getenv(
+            "SNOWFLAKE_QUERY_TIMEOUT_SECONDS",
+            "30",
+        )
+    )
+
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 
     DATA_PATH: Path = PROJECT_ROOT / "data"

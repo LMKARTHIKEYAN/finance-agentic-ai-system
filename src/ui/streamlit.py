@@ -30,20 +30,21 @@ from src.ui.api_client import (
     FinanceApiClientError,
     FinanceApiConnectionError,
     FinanceApiResponseError,
-    ask_finance_question,
+    submit_finance_request,
+    wait_for_finance_request,
 )
 
 
 APP_TITLE = "Finance Agentic AI"
 
 APP_SUBTITLE = (
-    "Natural-language FP&A analysis using the project's local sample data"
+    "Natural-language FP&A analysis through the Finance API"
 )
 
-DATA_SOURCE_LABEL = "Local project data"
+DATA_SOURCE_LABEL = "FastAPI managed data source"
 DATA_SOURCE_DESCRIPTION = (
-    "The FastAPI backend automatically loads the existing local CSV, "
-    "Excel and assumptions files. No user upload is required."
+    "Streamlit uses backend APIs only. Snowflake or local data selection "
+    "is controlled by the FastAPI environment."
 )
 
 DEFAULT_TOP_K = 5
@@ -198,6 +199,7 @@ def _initialize_session_state() -> None:
         "request_in_progress": False,
         "user_id": "streamlit-local-user",
         "session_id": None,
+        "active_request_id": None,
     }
 
     for key, default_value in defaults.items():
@@ -419,14 +421,15 @@ def _process_user_message(
         with st.spinner(
             "Running finance analysis..."
         ):
-            response = ask_finance_question(
+            submission = submit_finance_request(
                 question=api_question,
-                top_k=int(
-                    st.session_state.top_k
-                ),
                 user_id=st.session_state.user_id,
-                session_id=st.session_state.session_id,
             )
+            st.session_state.active_request_id = submission["request_id"]
+            request_result = wait_for_finance_request(
+                submission["request_id"]
+            )
+            response = _request_status_to_ask_response(request_result)
 
     except FinanceApiConnectionError as exc:
         _record_ui_error(
@@ -458,6 +461,7 @@ def _process_user_message(
 
     finally:
         st.session_state.request_in_progress = False
+        st.session_state.active_request_id = None
 
     _handle_api_response(
         response=response,
@@ -549,6 +553,28 @@ def _combine_pending_request(
         f"{cleaned_original} for "
         f"{cleaned_answer}"
     )
+
+
+def _request_status_to_ask_response(
+    request_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Adapt a completed lifecycle record to the existing UI renderer."""
+
+    answer = request_result.get("answer")
+    if not isinstance(answer, str) or not answer.strip():
+        raise FinanceApiResponseError(
+            "Completed finance request did not return an answer."
+        )
+    return {
+        "answer": answer,
+        "sources": [],
+        "selected_flow": request_result.get("selected_flow"),
+        "execution_status": request_result.get("status", "completed"),
+        "used_fallback": False,
+        "dashboard": {},
+        "clarification_required": False,
+        "intent": {},
+    }
 
 
 def _handle_api_response(
@@ -688,6 +714,7 @@ def _clear_conversation() -> None:
     st.session_state.latest_response = None
     st.session_state.request_in_progress = False
     st.session_state.session_id = None
+    st.session_state.active_request_id = None
 
     st.rerun()
 

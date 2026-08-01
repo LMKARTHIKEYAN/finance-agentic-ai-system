@@ -22,7 +22,10 @@ from src.api.service import (
     AskServiceResult,
     FinanceAskService,
     FinanceAskServiceError,
+)
+from src.repositories.finance_data_repository import (
     FinanceDataPaths,
+    LocalCsvFinanceRepository,
 )
 from src.rag.prompt_templates import PromptType
 from src.orchestrator.intent_parser import parse_finance_intent
@@ -122,9 +125,9 @@ def fake_graph_executor(state: dict) -> dict:
 
 
 @pytest.fixture
-def data_paths(
+def data_repository(
     tmp_path: Path,
-) -> FinanceDataPaths:
+) -> LocalCsvFinanceRepository:
     """
     Create temporary CSV files required by the service.
     """
@@ -163,15 +166,17 @@ def data_paths(
         index=False,
     )
 
-    return FinanceDataPaths(
-        operations=operations_path,
-        budget=budget_path,
-        assumptions=assumptions_path,
+    return LocalCsvFinanceRepository(
+        FinanceDataPaths(
+            operations=operations_path,
+            budget=budget_path,
+            assumptions=assumptions_path,
+        )
     )
 
 
 def test_service_returns_structured_result(
-    data_paths: FinanceDataPaths,
+    data_repository: LocalCsvFinanceRepository,
 ) -> None:
     """
     Service should return the final answer,
@@ -182,7 +187,7 @@ def test_service_returns_structured_result(
 
     service = FinanceAskService(
         rag_agent=rag_agent,
-        data_paths=data_paths,
+        data_repository=data_repository,
         graph_executor=fake_graph_executor,
     )
 
@@ -228,13 +233,13 @@ def test_comparison_filter_intent_spans_both_pnl_months() -> None:
 
 
 def test_deterministic_service_captures_autonomous_graph_context(
-    data_paths: FinanceDataPaths,
+    data_repository: LocalCsvFinanceRepository,
 ) -> None:
     """Completed deterministic execution should retain trusted graph state."""
 
     service = FinanceAskService(
         rag_agent=FakeRAGAgent(),
-        data_paths=data_paths,
+        data_repository=data_repository,
         graph_executor=fake_graph_executor,
     )
 
@@ -291,7 +296,7 @@ def test_resolve_prompt_type_normalizes_input() -> None:
     )
 
 def test_service_rejects_empty_question(
-    data_paths: FinanceDataPaths,
+    data_repository: LocalCsvFinanceRepository,
 ) -> None:
     """
     Empty questions should be rejected before
@@ -300,7 +305,7 @@ def test_service_rejects_empty_question(
 
     service = FinanceAskService(
         rag_agent=FakeRAGAgent(),
-        data_paths=data_paths,
+        data_repository=data_repository,
         graph_executor=fake_graph_executor,
     )
 
@@ -312,7 +317,7 @@ def test_service_rejects_empty_question(
 
 
 def test_service_raises_when_graph_fails(
-    data_paths: FinanceDataPaths,
+    data_repository: LocalCsvFinanceRepository,
 ) -> None:
     """
     Graph execution exceptions should become
@@ -328,7 +333,7 @@ def test_service_raises_when_graph_fails(
 
     service = FinanceAskService(
         rag_agent=FakeRAGAgent(),
-        data_paths=data_paths,
+        data_repository=data_repository,
         graph_executor=failing_graph_executor,
     )
 
@@ -349,21 +354,23 @@ def test_service_raises_for_missing_csv(
     a clear service error.
     """
 
-    missing_paths = FinanceDataPaths(
-        operations=tmp_path / "missing_operations.csv",
-        budget=tmp_path / "missing_budget.csv",
-        assumptions=tmp_path / "missing_assumptions.csv",
+    missing_repository = LocalCsvFinanceRepository(
+        FinanceDataPaths(
+            operations=tmp_path / "missing_operations.csv",
+            budget=tmp_path / "missing_budget.csv",
+            assumptions=tmp_path / "missing_assumptions.csv",
+        )
     )
 
     service = FinanceAskService(
         rag_agent=FakeRAGAgent(),
-        data_paths=missing_paths,
+        data_repository=missing_repository,
         graph_executor=fake_graph_executor,
     )
 
     with pytest.raises(
         FinanceAskServiceError,
-        match="Required data file not found",
+        match="Required operations data file not found",
     ):
         service.ask(
             "Show actual vs budget revenue variance for January 2026"

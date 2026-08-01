@@ -15,25 +15,49 @@ RAG logic and database logic must remain outside this module.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Any, Mapping, TypeAlias
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     status,
 )
 
-from src.api.dependencies import get_finance_service
+from src.api.dependencies import (
+    get_finance_service,
+    get_performance_service,
+    get_finance_request_lifecycle_service,
+)
 from src.api.schemas import (
     AskRequest,
     AskResponse,
     DashboardPayload,
+    PerformanceResponse,
+    FinanceRequestSubmissionResponse,
+    FinanceRequestStatusResponse,
     SourceResponse,
 )
 from src.api.service import (
     FinanceAskService,
     FinanceAskServiceError,
+)
+from src.integrations.snowflake_connection import (
+    SnowflakeConnectionError,
+    SnowflakeQueryError,
+)
+from src.repositories.snowflake_performance_repository import (
+    PerformanceRepositoryError,
+)
+from src.services.performance_service import PerformanceService
+from src.repositories.finance_request_repository import (
+    FinanceRequestRepositoryError,
+)
+from src.services.finance_request_lifecycle_service import (
+    FinanceRequestLifecycleService,
+    FinanceRequestNotFoundError,
 )
 
 
@@ -43,6 +67,16 @@ router = APIRouter()
 FinanceServiceDependency: TypeAlias = Annotated[
     FinanceAskService,
     Depends(get_finance_service),
+]
+
+PerformanceServiceDependency: TypeAlias = Annotated[
+    PerformanceService,
+    Depends(get_performance_service),
+]
+
+FinanceRequestServiceDependency: TypeAlias = Annotated[
+    FinanceRequestLifecycleService,
+    Depends(get_finance_request_lifecycle_service),
 ]
 
 
@@ -78,6 +112,106 @@ def health_check() -> dict[str, str]:
         "status": "healthy",
         "service": "finance-agentic-ai-api",
     }
+
+
+@router.get(
+    "/api/v1/data/performance",
+    response_model=PerformanceResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get monthly FP&A performance",
+)
+def get_performance(
+    month: date,
+    service: PerformanceServiceDependency,
+    vehicle_category: str | None = None,
+) -> PerformanceResponse:
+    """Return read-only actual, budget, and variance metrics."""
+
+    normalized_month = month.replace(day=1)
+    normalized_category = (
+        vehicle_category.strip() if vehicle_category else None
+    )
+    if vehicle_category is not None and not normalized_category:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="vehicle_category cannot be empty.",
+        )
+
+    try:
+        rows = service.get_performance(
+            month=normalized_month,
+            vehicle_category=normalized_category,
+        )
+    except (
+        SnowflakeConnectionError,
+        SnowflakeQueryError,
+        PerformanceRepositoryError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Performance data is temporarily unavailable.",
+        ) from exc
+
+    return PerformanceResponse(
+        month=normalized_month,
+        vehicle_category=normalized_category,
+        row_count=len(rows),
+        rows=rows,
+    )
+
+
+@router.post(
+    "/api/v1/finance/ask",
+    response_model=FinanceRequestSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit an asynchronous finance question",
+)
+def submit_finance_request(
+    request: AskRequest,
+    background_tasks: BackgroundTasks,
+    service: FinanceRequestServiceDependency,
+) -> FinanceRequestSubmissionResponse:
+    """Persist a request and schedule its finance workflow."""
+
+    try:
+        request_id = service.submit(
+            question=request.question,
+            user_id=request.user_id,
+        )
+    except FinanceRequestRepositoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Finance request storage is temporarily unavailable.",
+        ) from exc
+    background_tasks.add_task(service.process, request_id)
+    return FinanceRequestSubmissionResponse(request_id=request_id)
+
+
+@router.get(
+    "/api/v1/finance/requests/{request_id}",
+    response_model=FinanceRequestStatusResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get finance request status and result",
+)
+def get_finance_request(
+    request_id: str,
+    service: FinanceRequestServiceDependency,
+) -> FinanceRequestStatusResponse:
+    """Return one persisted request without re-running the workflow."""
+
+    try:
+        record = service.get(request_id)
+    except (ValueError, FinanceRequestNotFoundError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Finance request was not found.",
+        ) from exc
+    except FinanceRequestRepositoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Finance request storage is temporarily unavailable.",
+        ) from exc
+    return FinanceRequestStatusResponse(**record.__dict__)
 
 
 @router.post(

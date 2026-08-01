@@ -26,6 +26,10 @@ from src.ui.api_client import (
     FinanceApiConnectionError,
     FinanceApiResponseError,
     ask_finance_question,
+    submit_finance_request,
+    get_finance_request,
+    wait_for_finance_request,
+    get_performance_data,
 )
 
 
@@ -57,6 +61,76 @@ class FakeHttpResponse:
         """Return the encoded response body."""
 
         return self._body
+
+
+def test_submit_finance_request_uses_async_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data)
+        return FakeHttpResponse(
+            {"request_id": "request-1", "status": "pending"}
+        )
+
+    monkeypatch.setattr(api_client, "urlopen", fake_urlopen)
+    result = submit_finance_request(
+        "Explain variance", user_id="u1", base_url="http://api"
+    )
+
+    assert captured["url"] == "http://api/api/v1/finance/ask"
+    assert captured["payload"]["user_id"] == "u1"
+    assert result["request_id"] == "request-1"
+
+
+def test_get_finance_request_uses_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        return FakeHttpResponse(
+            {"request_id": "r1", "status": "completed", "answer": "ok"}
+        )
+
+    monkeypatch.setattr(api_client, "urlopen", fake_urlopen)
+    get_finance_request("r1", base_url="http://api")
+    assert captured["url"] == "http://api/api/v1/finance/requests/r1"
+
+
+def test_wait_polls_until_completed(monkeypatch: pytest.MonkeyPatch) -> None:
+    responses = iter([
+        {"status": "pending"},
+        {"status": "processing"},
+        {"status": "completed", "answer": "done"},
+    ])
+    monkeypatch.setattr(api_client, "get_finance_request", lambda *a, **k: next(responses))
+    monkeypatch.setattr(api_client.time, "sleep", lambda seconds: None)
+
+    result = wait_for_finance_request(
+        "r1", poll_interval_seconds=0.01, max_wait_seconds=2
+    )
+    assert result["answer"] == "done"
+
+
+def test_performance_client_encodes_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        return FakeHttpResponse({"month": "2026-04-01", "rows": []})
+
+    monkeypatch.setattr(api_client, "urlopen", fake_urlopen)
+    get_performance_data(
+        "2026-04-01", vehicle_category="10 FT", base_url="http://api"
+    )
+    assert "month=2026-04-01" in captured["url"]
+    assert "vehicle_category=10+FT" in captured["url"]
 
 
 @pytest.fixture

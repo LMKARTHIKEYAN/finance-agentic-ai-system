@@ -31,6 +31,25 @@ from src.autonomous.runtime import (
 )
 from src.autonomous.service_executor import AutonomousServiceExecutor
 from src.config.settings import settings
+from src.integrations.snowflake_connection import (
+    SnowflakeConnectionConfig,
+    SnowflakeConnectionFactory,
+)
+from src.repositories.snowflake_performance_repository import (
+    SnowflakePerformanceRepository,
+)
+from src.repositories.finance_data_repository import (
+    FinanceDataRepository,
+    LocalCsvFinanceRepository,
+    SnowflakeFinanceRepository,
+)
+from src.repositories.finance_request_repository import (
+    SnowflakeFinanceRequestRepository,
+)
+from src.services.performance_service import PerformanceService
+from src.services.finance_request_lifecycle_service import (
+    FinanceRequestLifecycleService,
+)
 from src.rag.embeddings import (
     DeterministicEmbeddingService,
 )
@@ -316,6 +335,22 @@ def build_rag_agent(
     )
 
 
+def build_finance_data_repository() -> FinanceDataRepository:
+    """Select local CSV or Snowflake finance data access."""
+
+    source = os.getenv("FINANCE_DATA_SOURCE", "local").strip().lower()
+    if source == "local":
+        return LocalCsvFinanceRepository(build_data_paths())
+    if source == "snowflake":
+        config = SnowflakeConnectionConfig.from_settings(settings)
+        return SnowflakeFinanceRepository(
+            SnowflakeConnectionFactory(config)
+        )
+    raise DependencyConfigurationError(
+        "FINANCE_DATA_SOURCE must be 'local' or 'snowflake'."
+    )
+
+
 def build_autonomous_service_executor(
     *,
     runtime: AutonomousRuntime | None = None,
@@ -356,11 +391,11 @@ def get_finance_service() -> FinanceAskService:
         retriever
     )
 
-    data_paths = build_data_paths()
+    data_repository = build_finance_data_repository()
 
     service_kwargs = {
         "rag_agent": rag_agent,
-        "data_paths": data_paths,
+        "data_repository": data_repository,
     }
     autonomous_executor = build_autonomous_service_executor()
     if autonomous_executor is not None:
@@ -378,6 +413,30 @@ def get_finance_service() -> FinanceAskService:
     )
 
 
+@lru_cache(maxsize=1)
+def get_performance_service() -> PerformanceService:
+    """Build the read-only Snowflake-backed performance service."""
+
+    config = SnowflakeConnectionConfig.from_settings(settings)
+    factory = SnowflakeConnectionFactory(config)
+    repository = SnowflakePerformanceRepository(factory)
+    return PerformanceService(repository)
+
+
+@lru_cache(maxsize=1)
+def get_finance_request_lifecycle_service() -> FinanceRequestLifecycleService:
+    """Build the Snowflake-backed asynchronous request service."""
+
+    config = SnowflakeConnectionConfig.from_settings(settings)
+    repository = SnowflakeFinanceRequestRepository(
+        SnowflakeConnectionFactory(config)
+    )
+    return FinanceRequestLifecycleService(
+        repository=repository,
+        finance_service=get_finance_service(),
+    )
+
+
 def clear_dependency_cache() -> None:
     """
     Clear the cached FinanceAskService.
@@ -386,3 +445,5 @@ def clear_dependency_cache() -> None:
     """
 
     get_finance_service.cache_clear()
+    get_performance_service.cache_clear()
+    get_finance_request_lifecycle_service.cache_clear()

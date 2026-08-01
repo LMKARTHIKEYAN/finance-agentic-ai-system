@@ -8,3 +8,4 @@ pgvector
 streamlit
 openai
 pydantic
+snowflake-connector-python[pandas]

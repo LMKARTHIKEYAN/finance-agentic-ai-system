@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from json import JSONDecodeError
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -37,6 +38,151 @@ class FinanceApiConnectionError(FinanceApiClientError):
 
 class FinanceApiResponseError(FinanceApiClientError):
     """Raised when FastAPI returns an error or invalid response."""
+
+
+def submit_finance_request(
+    question: str,
+    *,
+    user_id: str | None = None,
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Submit a question to POST /api/v1/finance/ask."""
+
+    payload: dict[str, Any] = {"question": _validate_question(question)}
+    if user_id is not None:
+        payload["user_id"] = user_id
+    result = _execute_json_request(
+        endpoint=f"{_resolve_base_url(base_url)}/api/v1/finance/ask",
+        method="POST",
+        payload=payload,
+        timeout_seconds=_resolve_timeout(timeout_seconds),
+    )
+    if not isinstance(result.get("request_id"), str):
+        raise FinanceApiResponseError(
+            "Finance API submission response is missing request_id."
+        )
+    if result.get("status") != "pending":
+        raise FinanceApiResponseError(
+            "Finance API submission response has an invalid status."
+        )
+    return result
+
+
+def get_finance_request(
+    request_id: str,
+    *,
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Read GET /api/v1/finance/requests/{request_id}."""
+
+    normalized_id = str(request_id).strip()
+    if not normalized_id:
+        raise ValueError("request_id must not be empty.")
+    result = _execute_json_request(
+        endpoint=(
+            f"{_resolve_base_url(base_url)}/api/v1/finance/requests/"
+            f"{normalized_id}"
+        ),
+        method="GET",
+        payload=None,
+        timeout_seconds=_resolve_timeout(timeout_seconds),
+    )
+    status_value = result.get("status")
+    if status_value not in {"pending", "processing", "completed", "failed"}:
+        raise FinanceApiResponseError(
+            "Finance request response has an invalid status."
+        )
+    return result
+
+
+def wait_for_finance_request(
+    request_id: str,
+    *,
+    base_url: str | None = None,
+    poll_interval_seconds: float = 1.0,
+    max_wait_seconds: float = 150.0,
+) -> dict[str, Any]:
+    """Poll request status until completion, failure, or timeout."""
+
+    if poll_interval_seconds <= 0 or max_wait_seconds <= 0:
+        raise ValueError("Polling intervals and maximum wait must be positive.")
+    deadline = time.monotonic() + max_wait_seconds
+    while True:
+        result = get_finance_request(request_id, base_url=base_url)
+        if result["status"] == "completed":
+            return result
+        if result["status"] == "failed":
+            raise FinanceApiResponseError(
+                str(result.get("error_message") or "Finance request failed.")
+            )
+        if time.monotonic() >= deadline:
+            raise FinanceApiConnectionError(
+                "Finance request did not complete before the polling timeout."
+            )
+        time.sleep(poll_interval_seconds)
+
+
+def get_performance_data(
+    month: str,
+    *,
+    vehicle_category: str | None = None,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    """Read monthly metrics from GET /api/v1/data/performance."""
+
+    from urllib.parse import urlencode
+
+    params = {"month": str(month).strip()}
+    if vehicle_category:
+        params["vehicle_category"] = vehicle_category.strip()
+    return _execute_json_request(
+        endpoint=(
+            f"{_resolve_base_url(base_url)}/api/v1/data/performance?"
+            f"{urlencode(params)}"
+        ),
+        method="GET",
+        payload=None,
+        timeout_seconds=_resolve_timeout(None),
+    )
+
+
+def _execute_json_request(
+    *, endpoint: str, method: str, payload: dict[str, Any] | None,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Execute one JSON API request with consistent error translation."""
+
+    request = Request(
+        url=endpoint,
+        data=(json.dumps(payload).encode("utf-8") if payload is not None else None),
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method=method,
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            body = response.read().decode("utf-8")
+    except HTTPError as exc:
+        raise FinanceApiResponseError(
+            f"Finance API returned HTTP {exc.code}: "
+            f"{_extract_http_error_message(exc)}"
+        ) from exc
+    except (URLError, TimeoutError) as exc:
+        raise FinanceApiConnectionError(
+            f"Could not connect to the Finance API at {endpoint}."
+        ) from exc
+    try:
+        result = json.loads(body)
+    except JSONDecodeError as exc:
+        raise FinanceApiResponseError(
+            "Finance API returned a response that is not valid JSON."
+        ) from exc
+    if not isinstance(result, dict):
+        raise FinanceApiResponseError(
+            "Finance API returned an unexpected response structure."
+        )
+    return result
 
 
 def ask_finance_question(

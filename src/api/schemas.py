@@ -13,9 +13,55 @@ It must not contain:
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class PerformanceRowResponse(BaseModel):
+    """Actual, budget, and variance metrics for one vehicle category."""
+
+    month: date
+    vehicle_category: str
+    actual_orders: int
+    budget_orders: int
+    orders_variance: int
+    actual_revenue: Decimal
+    budget_revenue: Decimal
+    revenue_variance: Decimal
+    revenue_variance_pct: Decimal | None
+    actual_cogs: Decimal
+    budget_cogs: Decimal
+    cogs_variance: Decimal
+
+
+class PerformanceResponse(BaseModel):
+    """Response returned by the monthly performance endpoint."""
+
+    month: date
+    vehicle_category: str | None = None
+    row_count: int
+    rows: list[PerformanceRowResponse] = Field(default_factory=list)
+
+
+class FinanceRequestSubmissionResponse(BaseModel):
+    request_id: str
+    status: str = "pending"
+
+
+class FinanceRequestStatusResponse(BaseModel):
+    request_id: str
+    user_id: str | None = None
+    question: str
+    status: str
+    selected_flow: str | None = None
+    answer: str | None = None
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 class AskRequest(BaseModel):

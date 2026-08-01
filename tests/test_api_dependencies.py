@@ -17,10 +17,16 @@ from src.api import dependencies
 from src.api.dependencies import (
     DependencyConfigurationError,
     build_data_paths,
+    build_finance_data_repository,
     clear_dependency_cache,
     get_finance_service,
 )
 from src.api.service import FinanceDataPaths
+from src.repositories.finance_data_repository import (
+    LocalCsvFinanceRepository,
+    SnowflakeFinanceRepository,
+)
+from src.integrations.snowflake_connection import SnowflakeConnectionConfig
 
 
 class FakeFinanceService:
@@ -105,6 +111,48 @@ def test_build_data_paths_uses_environment_overrides(
     )
 
 
+def test_repository_defaults_to_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FINANCE_DATA_SOURCE", raising=False)
+
+    repository = build_finance_data_repository()
+
+    assert isinstance(repository, LocalCsvFinanceRepository)
+
+
+def test_repository_selects_snowflake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FINANCE_DATA_SOURCE", "snowflake")
+    config = SnowflakeConnectionConfig(
+        account="test-account",
+        user="test-user",
+        password="test-password",
+    )
+    monkeypatch.setattr(
+        dependencies.SnowflakeConnectionConfig,
+        "from_settings",
+        lambda settings: config,
+    )
+
+    repository = build_finance_data_repository()
+
+    assert isinstance(repository, SnowflakeFinanceRepository)
+
+
+def test_repository_rejects_invalid_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FINANCE_DATA_SOURCE", "unknown")
+
+    with pytest.raises(
+        DependencyConfigurationError,
+        match="FINANCE_DATA_SOURCE",
+    ):
+        build_finance_data_repository()
+
+
 def test_required_environment_variable_raises_error_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,18 +215,14 @@ def test_get_finance_service_is_cached(
     fake_vector_store = object()
     fake_retriever = object()
     fake_rag_agent = object()
-    fake_data_paths = FinanceDataPaths(
-        operations=Path("operations.csv"),
-        budget=Path("budget.csv"),
-        assumptions=Path("assumptions.csv"),
-    )
+    fake_repository = object()
     fake_service = FakeFinanceService()
 
     call_counts = {
         "vector_store": 0,
         "retriever": 0,
         "rag_agent": 0,
-        "data_paths": 0,
+        "repository": 0,
         "service": 0,
     }
 
@@ -200,18 +244,18 @@ def test_get_finance_service_is_cached(
         assert retriever is fake_retriever
         return fake_rag_agent
 
-    def fake_build_data_paths():
-        call_counts["data_paths"] += 1
-        return fake_data_paths
+    def fake_build_repository():
+        call_counts["repository"] += 1
+        return fake_repository
 
     def fake_finance_ask_service(
         *,
         rag_agent,
-        data_paths,
+        data_repository,
     ):
         call_counts["service"] += 1
         assert rag_agent is fake_rag_agent
-        assert data_paths is fake_data_paths
+        assert data_repository is fake_repository
         return fake_service
 
     monkeypatch.setattr(
@@ -234,8 +278,8 @@ def test_get_finance_service_is_cached(
 
     monkeypatch.setattr(
         dependencies,
-        "build_data_paths",
-        fake_build_data_paths,
+        "build_finance_data_repository",
+        fake_build_repository,
     )
 
     monkeypatch.setattr(
@@ -255,7 +299,7 @@ def test_get_finance_service_is_cached(
         "vector_store": 1,
         "retriever": 1,
         "rag_agent": 1,
-        "data_paths": 1,
+        "repository": 1,
         "service": 1,
     }
 
@@ -294,18 +338,14 @@ def test_clear_dependency_cache_forces_rebuild(
 
     monkeypatch.setattr(
         dependencies,
-        "build_data_paths",
-        lambda: FinanceDataPaths(
-            operations=Path("operations.csv"),
-            budget=Path("budget.csv"),
-            assumptions=Path("assumptions.csv"),
-        ),
+        "build_finance_data_repository",
+        lambda: object(),
     )
 
     def fake_finance_ask_service(
         *,
         rag_agent,
-        data_paths,
+        data_repository,
     ):
         service = object()
         created_services.append(service)

@@ -8,7 +8,22 @@ from src.ui.streamlit import (
     _prepare_table_dataframe,
     _select_visible_chat_answer,
     _shorten_management_summary,
+    _request_status_to_ask_response,
 )
+
+
+def test_completed_request_is_adapted_for_existing_ui() -> None:
+    response = _request_status_to_ask_response(
+        {
+            "status": "completed",
+            "selected_flow": "variance",
+            "answer": "April variance was favourable.",
+        }
+    )
+
+    assert response["answer"] == "April variance was favourable."
+    assert response["selected_flow"] == "variance"
+    assert response["dashboard"] == {}
 
 
 def test_dashboard_response_uses_concise_chat_message() -> None:

@@ -29,7 +29,6 @@ from enum import Enum
 from contextvars import ContextVar
 import inspect
 import logging
-from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
@@ -55,6 +54,11 @@ from src.orchestrator.state import FinanceGraphState
 from src.rag.prompt_templates import PromptType
 from src.rag.rag_agent import FinanceRAGAgent
 from src.config.settings import settings
+from src.repositories.finance_data_repository import (
+    FinanceDataPaths,
+    FinanceDataRepository,
+    FinanceDataRepositoryError,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -107,22 +111,6 @@ def _with_hybrid_metadata(
     values["hybrid_metadata"] = metadata
     return AskServiceResult(**values)
 
-
-@dataclass(frozen=True)
-class FinanceDataPaths:
-    """
-    Paths to datasets used by the finance workflow.
-
-    These local files support the current GitHub project. They can later be
-    replaced by Snowflake, S3 or database sources without changing the public
-    service contract.
-    """
-
-    operations: Path
-    budget: Path
-    assumptions: Path
-    corporate_expenses: Path | None = None
-    budget_corporate_expenses: Path | None = None
 
 @dataclass(frozen=True)
 class AskServiceResult:
@@ -218,7 +206,7 @@ class FinanceAskService:
     def __init__(
         self,
         rag_agent: FinanceRAGAgent,
-        data_paths: FinanceDataPaths,
+        data_repository: FinanceDataRepository,
         graph_executor: GraphExecutor = run_finance_graph,
         memory_manager: MemoryManager | None = None,
         complexity_classifier: ComplexityClassifier | None = None,
@@ -233,8 +221,8 @@ class FinanceAskService:
             rag_agent:
                 Existing FinanceRAGAgent instance.
 
-            data_paths:
-                Paths to operations, budget and assumption files.
+            data_repository:
+                Repository providing finance datasets as Pandas DataFrames.
 
             graph_executor:
                 LangGraph execution function. This remains injectable so
@@ -255,12 +243,13 @@ class FinanceAskService:
                 "rag_agent.run must be callable."
             )
 
-        if not isinstance(
-            data_paths,
-            FinanceDataPaths,
-        ):
+        required_methods = (
+            "get_operations", "get_budget", "get_assumptions",
+            "get_corporate_expenses", "get_budget_corporate_expenses",
+        )
+        if any(not callable(getattr(data_repository, method, None)) for method in required_methods):
             raise TypeError(
-                "data_paths must be FinanceDataPaths."
+                "data_repository must implement FinanceDataRepository."
             )
 
         if not callable(graph_executor):
@@ -269,7 +258,7 @@ class FinanceAskService:
             )
 
         self._rag_agent = rag_agent
-        self._data_paths = data_paths
+        self._data_repository = data_repository
         self._graph_executor = graph_executor
         self._memory_manager = memory_manager or MemoryManager()
         self._conversation_context: dict[str, dict[str, Any]] = {}
@@ -843,8 +832,8 @@ class FinanceAskService:
        }
 
         if selected_flow in operations_flows:
-            operations_data = self._load_csv(
-                self._data_paths.operations
+            operations_data = self._load_repository_data(
+                self._data_repository.get_operations
             )
 
             filtered_operations = self._apply_intent_filters(
@@ -862,28 +851,9 @@ class FinanceAskService:
             state["operations_data"] = filtered_operations
 
         if selected_flow in budget_flows:
-            budget_data = self._load_csv(
-                self._data_paths.budget
+            budget_data = self._load_repository_data(
+                self._data_repository.get_budget
             )
-
-            filtered_budget = self._apply_intent_filters(
-                dataframe=budget_data,
-                intent=data_filter_intent,
-                dataset_name="budget",
-            )
-
-            self._log_filtered_dataset(
-                dataframe=filtered_budget,
-                dataset_name="budget",
-                intent=intent,
-            )
-
-            state["budget_data"] = filtered_budget
-            if selected_flow in budget_flows:
-                       budget_data = self._load_csv(
-                           self._data_paths.budget
-            )
-            
 
             filtered_budget = self._apply_intent_filters(
                 dataframe=budget_data,
@@ -901,27 +871,8 @@ class FinanceAskService:
 
         # Add the corporate-expense loading block here.
         if selected_flow in pnl_support_flows:
-            corporate_expenses_path = (
-                self._data_paths.corporate_expenses
-            )
-
-            budget_corporate_expenses_path = (
-                self._data_paths.budget_corporate_expenses
-            )
-
-            if corporate_expenses_path is None:
-                raise FinanceAskServiceError(
-                    "Corporate-expenses data path is not configured."
-                )
-
-            if budget_corporate_expenses_path is None:
-                raise FinanceAskServiceError(
-                    "Budget corporate-expenses data path "
-                    "is not configured."
-                )
-
-            corporate_expenses_data = self._load_csv(
-                corporate_expenses_path
+            corporate_expenses_data = self._load_repository_data(
+                self._data_repository.get_corporate_expenses
             )
 
             filtered_corporate_expenses = (
@@ -937,8 +888,8 @@ class FinanceAskService:
                 filtered_corporate_expenses
             )
 
-            budget_corporate_expenses_data = self._load_csv(
-                budget_corporate_expenses_path
+            budget_corporate_expenses_data = self._load_repository_data(
+                self._data_repository.get_budget_corporate_expenses
             )
 
             filtered_budget_corporate_expenses = (
@@ -956,16 +907,8 @@ class FinanceAskService:
 
         if selected_flow in assumption_flows:
             state["business_assumptions"] = (
-                self._load_csv(
-                    self._data_paths.assumptions
-                )
-            )
-
-        return state
-        if selected_flow in assumption_flows:
-            state["business_assumptions"] = (
-                self._load_csv(
-                    self._data_paths.assumptions
+                self._load_repository_data(
+                    self._data_repository.get_assumptions
                 )
             )
 
@@ -1819,30 +1762,22 @@ class FinanceAskService:
         )
 
     @staticmethod
-    def _load_csv(
-        path: Path,
+    def _load_repository_data(
+        loader: Callable[[], pd.DataFrame],
     ) -> pd.DataFrame:
         """
-        Load one CSV dataset.
+        Load one dataset through the configured repository.
 
         Raises:
             FinanceAskServiceError:
                 If the file is missing or cannot be loaded.
         """
 
-        if not path.exists():
-            raise FinanceAskServiceError(
-                f"Required data file not found: {path}"
-            )
-
         try:
-            return pd.read_csv(
-                path
-            )
-        except Exception as exc:
+            return loader()
+        except FinanceDataRepositoryError as exc:
             raise FinanceAskServiceError(
-                f"Unable to load data file "
-                f"'{path}': {exc}"
+                str(exc)
             ) from exc
 
     @staticmethod
