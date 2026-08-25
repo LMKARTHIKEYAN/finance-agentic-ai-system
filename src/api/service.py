@@ -1691,7 +1691,7 @@ class FinanceAskService:
 
         if dataset_name == "operations":
             if (
-                "fare" in dataframe.columns
+                "commission_amount" in dataframe.columns
                 and "order_status" in dataframe.columns
             ):
                 completed_mask = (
@@ -1703,7 +1703,7 @@ class FinanceAskService:
                 )
                 summary["completed_revenue"] = float(
                     pd.to_numeric(
-                        dataframe.loc[completed_mask, "fare"],
+                        dataframe.loc[completed_mask, "commission_amount"],
                         errors="coerce",
                     ).fillna(0).sum()
                 )

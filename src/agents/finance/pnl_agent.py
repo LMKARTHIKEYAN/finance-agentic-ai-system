@@ -80,7 +80,7 @@ class PnlAgent:
 
     Actual P&L formulas:
 
-        Revenue = Sum of fare from completed orders
+        Revenue = Sum of commission_amount from completed orders
 
         Direct Cost =
             Partner Payout

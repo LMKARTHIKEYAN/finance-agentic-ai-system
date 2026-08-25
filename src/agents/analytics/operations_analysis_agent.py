@@ -36,7 +36,7 @@ class OperationsAnalysisAgent:
         "pickup_cluster",
         "order_status",
         "vehicle_category",
-        "fare",
+        "commission_amount",
     }
 
     COMPLETED_STATUS = "completed"
@@ -154,8 +154,8 @@ class OperationsAnalysisAgent:
             .str.strip()
         )
 
-        filtered_data["fare"] = pd.to_numeric(
-            filtered_data["fare"],
+        filtered_data["commission_amount"] = pd.to_numeric(
+            filtered_data["commission_amount"],
             errors="coerce",
         ).fillna(0)
 
@@ -198,14 +198,13 @@ class OperationsAnalysisAgent:
         return int((data["order_status"] == self.CANCELLED_STATUS).sum())
 
     def _calculate_total_revenue(self, completed_data: pd.DataFrame) -> float:
-        return round(float(completed_data["fare"].sum()), 2)
+        """Return company revenue from completed-order commission only."""
+        return round(float(completed_data["commission_amount"].sum()), 2)
 
     @staticmethod
     def _calculate_commission_revenue(
         completed_data: pd.DataFrame,
     ) -> float:
-        if "commission_amount" not in completed_data.columns:
-            return 0.0
         return round(float(completed_data["commission_amount"].sum()), 2)
 
     def _calculate_average_order_value(
