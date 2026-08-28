@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Literal
 
 from pydantic import (
@@ -37,12 +37,139 @@ AutonomousStatus = Literal[
     "failed",
 ]
 IssueSeverity = Literal["error", "warning"]
+GoalStatus = Literal[
+    "pending",
+    "running",
+    "waiting_for_user",
+    "waiting_for_approval",
+    "completed",
+    "failed",
+]
+DecisionAction = Literal[
+    "call_tool",
+    "ask_user",
+    "request_approval",
+    "validate",
+    "finalize",
+    "stop",
+]
+ObservationStatus = Literal["completed", "failed", "blocked"]
+StopOutcome = Literal[
+    "continue",
+    "complete",
+    "ask_user",
+    "request_approval",
+    "limit_reached",
+    "failed",
+]
 
 
 class FrozenModel(BaseModel):
     """Base class for immutable autonomous workflow contracts."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class GoalCompletionCriterion(FrozenModel):
+    """One measurable condition required to complete a finance goal."""
+
+    key: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    required: bool = True
+
+
+class FinanceGoal(FrozenModel):
+    """Goal and completion contract produced from a user request."""
+
+    goal_id: str = Field(min_length=1)
+    original_request: str = Field(min_length=1)
+    objective: str = Field(min_length=1)
+    reporting_scope: "ReportingScope" = Field(
+        default_factory=lambda: ReportingScope()
+    )
+    criteria: tuple[GoalCompletionCriterion, ...] = Field(min_length=1)
+    ambiguities: tuple[str, ...] = ()
+    clarification_question: str | None = None
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    @model_validator(mode="after")
+    def validate_goal(self) -> "FinanceGoal":
+        keys = [criterion.key for criterion in self.criteria]
+        if len(keys) != len(set(keys)):
+            raise ValueError("goal criterion keys must be unique.")
+        if self.ambiguities and not self.clarification_question:
+            raise ValueError(
+                "ambiguous goals require a clarification question."
+            )
+        return self
+
+
+class AutonomousDecision(FrozenModel):
+    """One next-action decision made from the latest shared state."""
+
+    decision_id: str = Field(min_length=1)
+    action: DecisionAction
+    rationale: str = Field(min_length=1)
+    tool_name: str | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    target_criteria: tuple[str, ...] = ()
+    question: str | None = None
+    final_answer: str | None = None
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> "AutonomousDecision":
+        if self.action == "call_tool" and not self.tool_name:
+            raise ValueError("call_tool decisions require tool_name.")
+        if self.action != "call_tool" and self.tool_name is not None:
+            raise ValueError("only call_tool decisions may specify tool_name.")
+        if self.action in {"ask_user", "request_approval"} and not self.question:
+            raise ValueError(
+                f"{self.action} decisions require a question."
+            )
+        if self.action == "finalize" and not self.final_answer:
+            raise ValueError("finalize decisions require final_answer.")
+        return self
+
+
+class Observation(FrozenModel):
+    """Normalized result observed after executing one autonomous action."""
+
+    observation_id: str = Field(min_length=1)
+    decision_id: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    status: ObservationStatus
+    summary: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    satisfied_criteria: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    error_code: str | None = None
+    observed_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class StopDecision(FrozenModel):
+    """Deterministic decision about whether the agent loop may continue."""
+
+    outcome: StopOutcome
+    reason: str = Field(min_length=1)
+    missing_criteria: tuple[str, ...] = ()
+
+
+class AgentLoopResult(FrozenModel):
+    """Public result returned when the Phase 1 loop pauses or terminates."""
+
+    goal_id: str = Field(min_length=1)
+    status: GoalStatus
+    stop: StopDecision
+    answer: str | None = None
+    question: str | None = None
+    iterations: int = Field(ge=0)
+    tool_calls: int = Field(ge=0)
+    observations: tuple[Observation, ...] = ()
 
 
 class ComplexityDecision(FrozenModel):

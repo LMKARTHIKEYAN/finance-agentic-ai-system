@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pandas as pd
+
 from src.agents.finance.pnl_agent import PnlAgent
 from src.autonomous.schemas import ToolResult
 from src.autonomous.tools.data_tools import (
@@ -25,8 +27,9 @@ def generate_validated_pnl_analysis(
         raise TypeError("context must be FinanceDataContext.")
 
     pnl_agent = agent if agent is not None else PnlAgent()
+    orders_data = context.require_dataframe("operations_data")
     result = pnl_agent.analyze(
-        orders_data=context.require_dataframe("operations_data"),
+        orders_data=orders_data,
         corporate_expenses_data=context.require_dataframe(
             "corporate_expenses_data"
         ),
@@ -40,6 +43,13 @@ def generate_validated_pnl_analysis(
 
     payload = serialize_tool_payload(result)
     payload["pnl_summary"] = payload.get("summary", {})
+    payload["actual_direct_cost_breakdown"] = _actual_direct_cost_breakdown(
+        orders_data
+    )
+    payload["direct_cost_definition"] = (
+        "incentive + goodwill + dry_run + surge"
+    )
+    payload["revenue_definition"] = "commission_amount"
 
     return ToolResult(
         call_id="generate_validated_pnl_analysis",
@@ -47,3 +57,27 @@ def generate_validated_pnl_analysis(
         status="completed",
         payload=payload,
     )
+
+
+def _actual_direct_cost_breakdown(orders_data: pd.DataFrame) -> dict[str, float]:
+    completed = orders_data
+    if "order_status" in completed.columns:
+        completed = completed.loc[
+            completed["order_status"].astype(str).str.casefold().eq("completed")
+        ]
+    breakdown = {
+        column: round(
+            float(
+                pd.to_numeric(
+                    completed[column]
+                    if column in completed.columns
+                    else pd.Series(dtype="float64"),
+                    errors="coerce",
+                ).fillna(0).sum()
+            ),
+            2,
+        )
+        for column in ("incentive", "goodwill", "dry_run", "surge")
+    }
+    breakdown["total_direct_cost"] = round(sum(breakdown.values()), 2)
+    return breakdown

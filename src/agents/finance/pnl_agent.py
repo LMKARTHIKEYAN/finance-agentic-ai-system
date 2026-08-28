@@ -83,8 +83,7 @@ class PnlAgent:
         Revenue = Sum of commission_amount from completed orders
 
         Direct Cost =
-            Partner Payout
-            + Incentive
+            Incentive
             + Goodwill
             + Dry Run
             + Surge

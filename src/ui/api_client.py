@@ -40,6 +40,48 @@ class FinanceApiResponseError(FinanceApiClientError):
     """Raised when FastAPI returns an error or invalid response."""
 
 
+def ask_autonomous_question(
+    question: str,
+    *,
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Submit one CFO goal to the autonomous finance endpoint."""
+
+    result = _execute_json_request(
+        endpoint=f"{_resolve_base_url(base_url)}/api/v1/autonomous/ask",
+        method="POST",
+        payload={"question": _validate_question(question)},
+        timeout_seconds=_resolve_timeout(timeout_seconds),
+    )
+    status = result.get("status")
+    if status not in {"completed", "waiting_for_user", "waiting_for_approval", "failed"}:
+        raise FinanceApiResponseError("Autonomous API returned an invalid status.")
+    return result
+
+
+def download_monthly_report(
+    year: int,
+    month: int,
+    *,
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> bytes:
+    endpoint = f"{_resolve_base_url(base_url)}/api/v1/autonomous/monthly-report/{year}/{month}"
+    request = Request(url=endpoint, headers={"Accept": "application/pdf"}, method="GET")
+    try:
+        with urlopen(request, timeout=_resolve_timeout(timeout_seconds)) as response:
+            return response.read()
+    except HTTPError as exc:
+        raise FinanceApiResponseError(
+            f"Finance API returned HTTP {exc.code}: {_extract_http_error_message(exc)}"
+        ) from exc
+    except (URLError, TimeoutError) as exc:
+        raise FinanceApiConnectionError(
+            f"Could not connect to the Finance API at {endpoint}."
+        ) from exc
+
+
 def submit_finance_request(
     question: str,
     *,

@@ -29,10 +29,10 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="Finance Agentic AI API",
         description=(
-            "Enterprise-style Finance Agentic AI backend for FP&A, "
-            "LangGraph orchestration and RAG-based document grounding."
+            "Autonomous FP&A agent with bounded tool selection, "
+            "Snowflake finance calculations and cited RAG evidence."
         ),
-        version="1.0.0",
+        version="2.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",

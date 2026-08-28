@@ -1,0 +1,100 @@
+SHEETS
+{"kind":"sheet","id":"ws/xuvm0f","name":"2023 Sales","index":0,"range":"A1:E12","address":"A1:E12"}
+{"kind":"sheet","id":"ws/yygyr8","name":"2024 Sales","index":1,"range":"A1:E12","address":"A1:E12"}
+{"kind":"sheet","id":"ws/qopdpj","name":"Variance Decomp","index":2,"range":"A1:L15","address":"A1:L15"}
+REGION 2023 Sales A1:E12
+{"kind":"region","sheet":"2023 Sales","address":"A1:E12","rows":12,"cols":5,"nonEmpty":56,"blank":4,"text":56,"maxTextLength":20,"preview":[["Product Category","Product Name","2023 Qty (Tons)","2023 Rev Value ($)","2023 Price / Ton ($)"],["Beverages","Cola","1080","39500.288832348553","36.574341511433843"],["Beverages","Juice","1500","85899.976214907772","57.266650809938518"],["Snacks","Chips",null,null,"103.52761746416409"],["Snacks","Nuts","2190","92860.808091094019","42.402195475385398"],["Snacks","Cookies","1880","69957.856348709014","37.211625717398412"],["Dairy","Milk","1030","56439.8614019503","54.795981943641067"],["Dairy","Cheese","2090","189928.17037684066","90.874722668344816"],["Frozen Foods","Pizza","1300","132083.8772012023","101.6029824624633"],["Frozen Foods","Ice Cream","2190","161403.72742669247","73.700332158307063"],["Personal Care","Shampoo","1940","173968.67402246606","89.674574238384565"],["Total",null,"15200","1002043.2399162112",null]],"previewAddress":"A1:E12","previewRows":12,"previewCols":5}
+FORMULAS 2023 Sales
+{"kind":"formula","sheet":"2023 Sales","address":"D2","formula":"=C2*E2"}
+{"kind":"formula","sheet":"2023 Sales","address":"C12","formula":"=SUM(C2:C11)"}
+{"kind":"formula","sheet":"2023 Sales","address":"D12","formula":"=SUM(D2:D11)"}
+REGION 2024 Sales A1:E12
+{"kind":"region","sheet":"2024 Sales","address":"A1:E12","rows":12,"cols":5,"nonEmpty":56,"blank":4,"text":56,"maxTextLength":20,"preview":[["Product Category","Product Name","2024 Qty (Tons)","2024 Rev Value ($)","2024 Price / Ton ($)"],["Beverages","Cola","1191","39897.096753866026","33.498821791659132"],["Beverages","Juice","1652","102393.42294811152","61.981490888687361"],["Snacks","Chips","1133","111638.13982410343","98.533221380497295"],["Snacks","Nuts","2495","105300.19434945672","42.204486713209107"],["Snacks","Cookies",null,null,"34.890304915989127"],["Dairy","Milk","1145","66481.654198998862","58.062580086461892"],["Dairy","Cheese","2303","228106.07302644412","99.047361279393883"],["Frozen Foods","Pizza","1344","156832.12132909548","116.6905664651008"],["Frozen Foods","Ice Cream","2178","168092.20956185693","77.177323031155609"],["Personal Care","Shampoo","2148","204789.51867390977","95.33962694316098"],["Total",null,"15589","1183530.430665843",null]],"previewAddress":"A1:E12","previewRows":12,"previewCols":5}
+FORMULAS 2024 Sales
+{"kind":"formula","sheet":"2024 Sales","address":"D2","formula":"=C2*E2"}
+{"kind":"formula","sheet":"2024 Sales","address":"C12","formula":"=SUM(C2:C11)"}
+{"kind":"formula","sheet":"2024 Sales","address":"D12","formula":"=SUM(D2:D11)"}
+REGION Variance Decomp A1:L15
+{"kind":"region","sheet":"Variance Decomp","address":"A1:L11","rows":11,"cols":12,"nonEmpty":132,"text":132,"maxTextLength":23,"preview":[["Product Category","Product Name","Budget Qty (Tons)","Actual Qty (Tons)","Budget Price/Ton","Actual Price/Ton","Busdget Revenue","Actual Revenue","Price Effect","Volume Effect","Disc or New launc","Total Variance Check"],["Dairy","Cheese","2090","2303","90.87472266834482","99.04736127939388","189928.17037684066","228106.07302644412","18821.586721246","19356.315928357446","0","1.8189894035458565e-11"],["Personal Care","Shampoo","1940","2148","89.67457423838457","95.33962694316098","173968.67402246606","204789.51867390977","12168.533209859737","18652.31144158399","0","-1.6370904631912708e-11"],["Snacks","Nuts","2190","2495","42.402195475385398","42.204486713209107","92860.80809109402","105300.19434945672","-493.28336162984488","12932.669619992546","0","3.637978807091713E-12"],["Beverages","Juice","1500","1652","57.266650809938518","61.981490888687361","85899.97621490777","102393.42294811152","7788.9158100930881","8704.5309231106548","0","2.7284841053187847E-12"],["Dairy","Milk","1030","1145","54.795981943641067","58.062580086461885","56439.8614019503","66481.65419899886","3740.2548735298369","6301.5379235187229","0","1.8189894035458565E-12"],["Frozen Foods","Pizza","1300","1344","101.6029824624633","116.6905664651008","132083.8772012023","156832.12132909548","20277.7128995448","4470.5312283483854","0","-7.2759576141834259E-12"],["Beverages","Cola","1080","1191","36.574341511433843","33.498821791659132","39500.28883234855","39897.096753866026","-3662.9439862516806","4059.7519077691568","0","-3.1832314562052488E-12"],["Frozen Foods","Ice Cream","2190","2178","73.700332158307063","77.177323031155609","161403.72742669247","168092.20956185693","7572.8861210641335","-884.40398589968481","0","1.546140993013978E-11"],["Snacks","Chips","0","1133","0","98.533221380497295","0","111638.13982410343","0","0","111638.13982410343","0"],["Snacks","Cookies","1880","0","37.211625717398412","0","69957.85634870901","0","0","0","-69957.856348709014","0"]],"previewAddress":"A1:L11","previewRows":11,"previewCols":12}
+{"kind":"region","sheet":"Variance Decomp","address":"A13:L13","rows":1,"cols":12,"nonEmpty":9,"blank":3,"text":9,"maxTextLength":23,"preview":[["Totals",null,"15200","15589",null,null,"1002043.2399162111","1183530.4306658427","66213.66228745607","73593.24498678121","41680.28347539442","-8.7311491370201111E-11"]],"previewAddress":"A13:L13","previewRows":1,"previewCols":12}
+FORMULAS Variance Decomp
+{"kind":"formula","sheet":"Variance Decomp","address":"A2","formula":"='2023 Sales'!A8"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B2","formula":"='2023 Sales'!B8"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C2","formula":"='2023 Sales'!C8"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D2","formula":"='2024 Sales'!C8"}
+{"kind":"formula","sheet":"Variance Decomp","address":"E2","formula":"=IFERROR(G2/C2,0)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"F2","formula":"=IFERROR(H2/D2,0)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G2","formula":"='2023 Sales'!D8"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H2","formula":"='2024 Sales'!D8"}
+{"kind":"formula","sheet":"Variance Decomp","address":"I2","formula":"=IF(OR(E2=0,F2=0),0,(F2-E2)*D2)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"J2","formula":"=IF(OR(E2=0,F2=0),0,(D2-C2)*E2)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"K2","formula":"=IF(OR(E2=0,F2=0),(H2-G2),0)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"L2","formula":"=(H2-G2)-J2-I2-K2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A3","formula":"='2023 Sales'!A11"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B3","formula":"='2023 Sales'!B11"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C3","formula":"='2023 Sales'!C11"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D3","formula":"='2024 Sales'!C11"}
+{"kind":"formula","sheet":"Variance Decomp","address":"E3","formula":"=IFERROR(G3/C3,0)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"F3","formula":"=IFERROR(H3/D3,0)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G3","formula":"='2023 Sales'!D11"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H3","formula":"='2024 Sales'!D11"}
+{"kind":"formula","sheet":"Variance Decomp","address":"I3","formula":"=IF(OR(E3=0,F3=0),0,(F3-E3)*D3)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"J3","formula":"=IF(OR(E3=0,F3=0),0,(D3-C3)*E3)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"K3","formula":"=IF(OR(E3=0,F3=0),(H3-G3),0)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"L3","formula":"=(H3-G3)-J3-I3-K3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A4","formula":"='2023 Sales'!A5"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B4","formula":"='2023 Sales'!B5"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C4","formula":"='2023 Sales'!C5"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D4","formula":"='2024 Sales'!C5"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G4","formula":"='2023 Sales'!D5"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H4","formula":"='2024 Sales'!D5"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A5","formula":"='2023 Sales'!A3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B5","formula":"='2023 Sales'!B3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C5","formula":"='2023 Sales'!C3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D5","formula":"='2024 Sales'!C3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G5","formula":"='2023 Sales'!D3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H5","formula":"='2024 Sales'!D3"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A6","formula":"='2023 Sales'!A7"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B6","formula":"='2023 Sales'!B7"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C6","formula":"='2023 Sales'!C7"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D6","formula":"='2024 Sales'!C7"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G6","formula":"='2023 Sales'!D7"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H6","formula":"='2024 Sales'!D7"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A7","formula":"='2023 Sales'!A9"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B7","formula":"='2023 Sales'!B9"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C7","formula":"='2023 Sales'!C9"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D7","formula":"='2024 Sales'!C9"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G7","formula":"='2023 Sales'!D9"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H7","formula":"='2024 Sales'!D9"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A8","formula":"='2023 Sales'!A2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B8","formula":"='2023 Sales'!B2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C8","formula":"='2023 Sales'!C2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D8","formula":"='2024 Sales'!C2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G8","formula":"='2023 Sales'!D2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H8","formula":"='2024 Sales'!D2"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A9","formula":"='2023 Sales'!A10"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B9","formula":"='2023 Sales'!B10"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C9","formula":"='2023 Sales'!C10"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D9","formula":"='2024 Sales'!C10"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G9","formula":"='2023 Sales'!D10"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H9","formula":"='2024 Sales'!D10"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A10","formula":"='2023 Sales'!A4"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B10","formula":"='2023 Sales'!B4"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C10","formula":"='2023 Sales'!C4"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D10","formula":"='2024 Sales'!C4"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G10","formula":"='2023 Sales'!D4"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H10","formula":"='2024 Sales'!D4"}
+{"kind":"formula","sheet":"Variance Decomp","address":"A11","formula":"='2023 Sales'!A6"}
+{"kind":"formula","sheet":"Variance Decomp","address":"B11","formula":"='2023 Sales'!B6"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C11","formula":"='2023 Sales'!C6"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D11","formula":"='2024 Sales'!C6"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G11","formula":"='2023 Sales'!D6"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H11","formula":"='2024 Sales'!D6"}
+{"kind":"formula","sheet":"Variance Decomp","address":"C13","formula":"=SUM(C2:C11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"D13","formula":"=SUM(D2:D11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"G13","formula":"=SUM(G2:G11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H13","formula":"=SUM(H2:H11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"I13","formula":"=SUM(I2:I11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"J13","formula":"=SUM(J2:J11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"K13","formula":"=SUM(K2:K11)"}
+{"kind":"formula","sheet":"Variance Decomp","address":"H15","formula":"=H13-G13"}

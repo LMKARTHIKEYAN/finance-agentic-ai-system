@@ -17,7 +17,7 @@ def test_create_app_returns_fastapi_instance() -> None:
 
     assert isinstance(application, FastAPI)
     assert application.title == "Finance Agentic AI API"
-    assert application.version == "1.0.0"
+    assert application.version == "2.0.0"
 
 
 def test_module_exposes_application() -> None:
@@ -47,7 +47,7 @@ def test_openapi_document_is_available() -> None:
     )
 
     assert "/health" in document["paths"]
-    assert "/ask" in document["paths"]
+    assert "/api/v1/autonomous/ask" in document["paths"]
 
 
 def test_swagger_documentation_is_available() -> None:
@@ -76,5 +76,6 @@ def test_health_route_is_registered_in_application() -> None:
 
     assert response.json() == {
         "status": "healthy",
-        "service": "finance-agentic-ai-api",
+        "service": "autonomous-finance-agentic-ai-api",
+        "architecture": "decide-act-observe",
     }

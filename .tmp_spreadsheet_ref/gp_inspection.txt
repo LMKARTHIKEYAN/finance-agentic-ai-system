@@ -1,0 +1,156 @@
+SHEETS
+{"kind":"sheet","id":"ws/n07s9r","name":"2023","index":0,"range":"A1:H13","address":"A1:H13"}
+{"kind":"sheet","id":"ws/ilf4f8","name":"2024","index":1,"range":"A1:H13","address":"A1:H13"}
+{"kind":"sheet","id":"ws/bx0d39","name":"Product Level Analysis","index":2,"range":"A1:Z14","address":"A1:Z14"}
+{"kind":"sheet","id":"ws/h4psij","name":"Portfolio Level Analysis","index":3,"range":"A1:H19","address":"A1:H19"}
+{"kind":"sheet","id":"ws/fr41qg","name":"Sheet1","index":4,"range":"A1:H19","address":"A1:H19"}
+{"kind":"sheet","id":"ws/95zd0w","name":"Working","index":5,"range":"A1:H19","address":"A1:H19"}
+{"kind":"sheet","id":"ws/swmel3","name":"GP% Bridge","index":6,"range":"A1:C10","address":"A1:C10"}
+REGION 2023 A1:K19
+{"kind":"region","sheet":"2023","address":"A1:H13","rows":13,"cols":8,"nonEmpty":94,"blank":10,"text":94,"maxTextLength":19,"preview":[["Category","Product","Volume","Price","COGS","Rev","COGS","Profit"],["Snacks","Chips","27936.973961236923","3","1.305402655656315","83810.921883710776","36469","47341.921883710776"],["Beverages","Cola","22349.579168989541","2.2000000000000002","1.2","49169.074171776992","26819.495002787447","22349.579168989545"],["Frozen Foods","Pizza","11174.789584494771","5","2.6375185929721088","55873.947922473853","29473.715301656022","26400.232620817831"],["Dairy","Milk","20487.11423824041","1.5","0.90000000000000013","30730.671357360618","18438.402814416371","12292.268542944246"],["Dairy","Cheese","13037.254515243898","4","2.6","52149.018060975592","33896.861739634136","18252.156321341456"],["Snacks","Nuts","14899.719445993027","4.5","2.6","67048.737506968624","38739.27055958187","28309.466947386754"],["Frozen Foods","Ice Cream","9312.3246537456416","6","4.2","55873.947922473846","39111.763545731694","16762.184376742152"],["Personal Care","Shampoo","14562.052888868879","7","3.8132672929958895","101934.37022208216","55529","46405.370222082158"],["Snacks","Cookies","16762.184376742156","2.8","1.7","46934.116254878034","28495.713440461663","18438.402814416371"],["Beverages","Juice","18624.649307491283","2.5","1.4","46561.62326872821","26074.509030487796","20487.114238240414"],["Total",null,null,null,null,"590086.42857142864","333047.73143475701","257038.69713667169"],["GP%",null,null,null,null,null,null,"0.43559499878509361"]],"previewAddress":"A1:H13","previewRows":13,"previewCols":8}
+FORMULAS 2023
+{"kind":"formula","sheet":"2023","address":"F2","formula":"=D2*C2"}
+{"kind":"formula","sheet":"2023","address":"G2","formula":"=C2*E2"}
+{"kind":"formula","sheet":"2023","address":"H2","formula":"=F2-G2"}
+{"kind":"formula","sheet":"2023","address":"F3","formula":"=D3*C3"}
+{"kind":"formula","sheet":"2023","address":"G3","formula":"=C3*E3"}
+{"kind":"formula","sheet":"2023","address":"H3","formula":"=F3-G3"}
+{"kind":"formula","sheet":"2023","address":"F12","formula":"=SUM(F2:F11)"}
+{"kind":"formula","sheet":"2023","address":"G12","formula":"=SUM(G2:G11)"}
+{"kind":"formula","sheet":"2023","address":"H12","formula":"=SUM(H2:H11)"}
+{"kind":"formula","sheet":"2023","address":"H13","formula":"=H12/F12"}
+REGION 2024 A1:K16
+{"kind":"region","sheet":"2024","address":"A1:H13","rows":13,"cols":8,"nonEmpty":94,"blank":10,"text":94,"maxTextLength":19,"preview":[["Category","Product","Volume","Price","COGS","Rev","COGS","Profit"],["Snacks","Chips","74296.435297487231","3.2","1.7","237748.59295195914","126303.94000572829","111444.65294623085"],["Beverages","Cola","22986.792427605189","2.2999999999999998","1.25","52869.622583491931","28733.490534506487","24136.132048985444"],["Frozen Foods","Pizza","10840.69319958609","5.2","3.2","56371.604637847675","34690.218238675494","21681.386399172181"],["Dairy","Milk","16060.67110865953","1.55","0.95","24894.040218422273","15257.637553226552","9636.4026651957211"],["Dairy","Cheese","10154.123781466791","4.0999999999999996","2.7","41631.907504013841","27416.134209960339","14215.773294053502"],["Snacks","Nuts","13927.174418285602","4.5999999999999996","2.7","64065.002324113761","37603.370929371129","26461.631394742632"],["Frozen Foods","Ice Cream","7354.3032125060608","6.1","4.3","44861.249596286965","31623.50381377606","13237.745782510905"],["Personal Care","Shampoo","6548.9954924216281","7.1","4.5999999999999996","46497.867996193556","30125.379265139487","16372.488731054069"],["Snacks","Cookies","12329.453830885737","2.7","1.8","33289.525343391491","22193.016895594326","11096.508447797165"],["Beverages","Juice","14507.982613686179","2.4","1.45","34819.158272846827","21036.574789844959","13782.583483001868"],["Total",null,null,null,null,"637048.5714285674","374983.2662358231","262065.30519274433"],["GP%",null,null,null,null,null,null,"0.41137413526423683"]],"previewAddress":"A1:H13","previewRows":13,"previewCols":8}
+FORMULAS 2024
+{"kind":"formula","sheet":"2024","address":"F2","formula":"=C2*D2"}
+{"kind":"formula","sheet":"2024","address":"G2","formula":"=E2*C2"}
+{"kind":"formula","sheet":"2024","address":"H2","formula":"=F2-G2"}
+{"kind":"formula","sheet":"2024","address":"F12","formula":"=SUM(F2:F11)"}
+{"kind":"formula","sheet":"2024","address":"G12","formula":"=SUM(G2:G11)"}
+{"kind":"formula","sheet":"2024","address":"H12","formula":"=SUM(H2:H11)"}
+{"kind":"formula","sheet":"2024","address":"H13","formula":"=H12/F12"}
+REGION Product Level Analysis A1:AD22
+{"kind":"region","sheet":"Product Level Analysis","address":"A1:T12","rows":12,"cols":20,"nonEmpty":237,"blank":3,"text":237,"maxTextLength":22,"preview":[[null,null,"2024","Actual","Actual","Actual","Actual","Actual","Actual","Budget","Budget","Budget","Budget","Budget","Budget","Budget","Var","Var","Var",null],["Category","Product","Volume Actual","Price per unit","COGS per unit","Rev","COGS","Profit","GP%","Volume Base","Price per unit","COGS per unit","Rev","COGS","Profit","GP%","Price Effect","Cost Effect","Check","Mix Indicator"],["Beverages","Cola","74296.43529748723","3.2","1.7","237748.59295195914","126303.94000572829","111444.65294623085","0.46875","27936.973961236923","3","1.305402655656315","83810.92188371078","36469","47341.92188371078","0.564865781447895","0.027195888659506617","-0.12331167010740163","0","1"],["Beverages","Juice","22986.79242760519","2.2999999999999998","1.25","52869.62258349193","28733.490534506487","24136.132048985444","0.45652173913043476","22349.579168989541","2.2000000000000002","1.2","49169.07417177699","26819.495002787447","22349.579168989545","0.45454545454545459","0.023715415019762764","-0.021739130434782594","0","-1"],["Snacks","Chips","10840.69319958609","5.2","3.2","56371.604637847675","34690.218238675494","21681.386399172181","0.38461538461538458","11174.789584494771","5","2.6375185929721088","55873.947922473853","29473.715301656022","26400.232620817831","0.47249628140557826","2.028860456132392E-2","-0.10816950135151759","0","-1"],["Snacks","Nuts","16060.67110865953","1.55","0.95","24894.040218422273","15257.637553226552","9636.4026651957211","0.38709677419354849","20487.11423824041","1.5","0.90000000000000013","30730.671357360618","18438.402814416371","12292.268542944246","0.39999999999999997","1.9354838709677358E-2","-3.2258064516128837E-2","0","1"],["Snacks","Cookies","10154.123781466791","4.0999999999999996","2.7","41631.907504013841","27416.134209960339","14215.773294053502","0.34146341463414626","13037.254515243898","4","2.6","52149.018060975592","33896.861739634136","18252.156321341456","0.35","1.5853658536585324E-2","-2.4390243902439046E-2","0","1"],["Dairy","Milk","13927.174418285602","4.5999999999999996","2.7","64065.002324113761","37603.370929371129","26461.631394742632","0.41304347826086946","14899.719445993027","4.5","2.6","67048.737506968624","38739.27055958187","28309.466947386754","0.42222222222222228","1.256038647342983E-2","-2.173913043478265E-2","0","1"],["Dairy","Cheese","7354.303212506061","6.1","4.3","44861.249596286965","31623.50381377606","13237.745782510905","0.29508196721311469","9312.3246537456416","6","4.2","55873.947922473846","39111.763545731694","16762.184376742152","0.3","1.1475409836065542E-2","-1.6393442622950838E-2","0","1"],["Frozen Foods","Pizza","6548.995492421628","7.1","4.5999999999999996","46497.867996193556","30125.379265139487","16372.488731054069","0.352112676056338","14562.052888868879","7","3.8132672929958895","101934.37022208216","55529","46405.370222082158","0.45524752957201586","7.6725700060278346E-3","-0.11080742352170569","0","-1"],["Frozen Foods","Ice Cream","12329.453830885737","2.7","1.8","33289.525343391491","22193.016895594326","11096.508447797165","0.33333333333333337","16762.184376742156","2.8","1.7","46934.116254878034","28495.713440461663","18438.402814416371","0.39285714285714285","-2.2486772486772444E-2","-3.7037037037037035E-2","0","1"],["Personal Care","Shampoo","14507.98261368618","2.4","1.45","34819.158272846827","21036.574789844959","13782.583483001868","0.39583333333333331","18624.649307491283","2.5","1.4","46561.62326872821","26074.509030487796","20487.114238240414","0.44000000000000006","-2.3333333333333373E-2","-2.083333333333337E-2","0","-1"]],"previewAddress":"A1:T12","previewRows":12,"previewCols":20}
+{"kind":"region","sheet":"Product Level Analysis","address":"Y1:Z12","rows":12,"cols":2,"nonEmpty":22,"blank":2,"text":22,"maxTextLength":21,"preview":[[null,null],["Mix 2024","Mix 2023"],["0.3732032432296538","0.1420316038899811"],["0.08299150952482785","0.08332520761545559"],["8.8488707401753672E-2","9.4687735926654068E-2"],["3.9077146288230322E-2","5.2078254759659735E-2"],["6.5351229672574576E-2","8.8375220198210452E-2"],["0.10056533394376728","0.11362528311198489"],["7.0420453962696444E-2","9.4687735926654054E-2"],["7.2989517725348813E-2","0.17274481378746576"],["5.2255866878000309E-2","7.9537698178389418E-2"],["5.4656991373146994E-2","7.890644660554505E-2"]],"previewAddress":"Y1:Z12","previewRows":12,"previewCols":2}
+{"kind":"region","sheet":"Product Level Analysis","address":"A14:T14","rows":1,"cols":20,"nonEmpty":15,"blank":5,"text":15,"maxTextLength":19,"preview":[["Total",null,"189006.62538259002","3.3705092090769","1.9839688977927434","637048.5714285674","374983.2662358231","262065.30519274433","0.41137413526423683","169146.64214104656","3.488608588986191","1.9689881349050844","590086.4285714286","333047.731434757","257038.6971366717","0.4355949987850935",null,null,null,null]],"previewAddress":"A14:T14","previewRows":1,"previewCols":20}
+FORMULAS Product Level Analysis
+{"kind":"formula","sheet":"Product Level Analysis","address":"C3","formula":"='2024'!C2"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"F3","formula":"=C3*D3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"G3","formula":"=C3*E3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"H3","formula":"=F3-G3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"I3","formula":"=H3/F3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"M3","formula":"=J3*K3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"N3","formula":"=J3*L3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"O3","formula":"=M3-N3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"P3","formula":"=O3/M3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"Q3","formula":"=((D3-L3)/D3)-P3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"R3","formula":"=I3-P3-Q3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"S3","formula":"=(I3-P3)-Q3-R3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"T3","formula":"=IF(OR(AND(P3>$P$14,Y3>Z3),AND(P3<$P$14,Y3<Z3)),1,-1)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"Y3","formula":"=F3/$F$14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"Z3","formula":"=M3/$M$14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C4","formula":"='2024'!C3"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"F4","formula":"=C4*D4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"G4","formula":"=C4*E4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"M4","formula":"=J4*K4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"N4","formula":"=J4*L4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"O4","formula":"=M4-N4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"Q4","formula":"=((D4-L4)/D4)-P4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"R4","formula":"=I4-P4-Q4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"S4","formula":"=(I4-P4)-Q4-R4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"T4","formula":"=IF(OR(AND(P4>$P$14,Y4>Z4),AND(P4<$P$14,Y4<Z4)),1,-1)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"Y4","formula":"=F4/$F$14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"Z4","formula":"=M4/$M$14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C5","formula":"='2024'!C4"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C6","formula":"='2024'!C5"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C7","formula":"='2024'!C6"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C8","formula":"='2024'!C7"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C9","formula":"='2024'!C8"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C10","formula":"='2024'!C9"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C11","formula":"='2024'!C10"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C12","formula":"='2024'!C11"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"P12","formula":"=(K12-L12)/K12"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"C14","formula":"=SUM(C3:C12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"D14","formula":"=F14/C14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"E14","formula":"=G14/C14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"F14","formula":"=SUM(F3:F12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"G14","formula":"=SUM(G3:G12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"H14","formula":"=SUM(H3:H12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"J14","formula":"=SUM(J3:J12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"K14","formula":"=M14/J14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"L14","formula":"=N14/J14"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"M14","formula":"=SUM(M3:M12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"N14","formula":"=SUM(N3:N12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"O14","formula":"=SUM(O3:O12)"}
+{"kind":"formula","sheet":"Product Level Analysis","address":"P14","formula":"=(K14-L14)/K14"}
+REGION Portfolio Level Analysis A1:H22
+{"kind":"region","sheet":"Portfolio Level Analysis","address":"A5:C11","rows":7,"cols":3,"nonEmpty":16,"blank":5,"text":16,"maxTextLength":39,"preview":[["Base Revenue","∑ (Base price x Base Vol)","590086.4285714286"],["Base GP$","∑ (Base vol x (base price - base cost))","257038.6971366717"],["Base GP%",null,"0.4355949987850936"],[null,null,null],["Mix-only Revenue","∑ (Base price x Act Vol)","615804.7168849484"],["Mix-only GP$","∑ (Act vol x (base price - base Cost))","288442.90185949963"],["Mix-only GP%",null,"0.46839995529522677"]],"previewAddress":"A5:C11","previewRows":7,"previewCols":3}
+{"kind":"region","sheet":"Portfolio Level Analysis","address":"G5:H11","rows":7,"cols":2,"nonEmpty":8,"blank":6,"text":8,"maxTextLength":21,"preview":[["Mix Effect (bps)","0.032804956510133154"],["Price Effect (bps)","0.0177274301075111"],["Cost Effect (bps)","-0.07475325013850098"],["Total Δ GP% (bps)","-0.024220863520856728"],[null,null],[null,null],[null,null]],"previewAddress":"G5:H11","previewRows":7,"previewCols":2}
+{"kind":"region","sheet":"Portfolio Level Analysis","address":"A13:C15","rows":3,"cols":3,"nonEmpty":8,"blank":1,"text":8,"maxTextLength":37,"preview":[["Price-only Revenue","∑ (Act price x Act Vol)","637048.5714285674"],["Price-only GP$ (A price, B cost)","∑ (Act vol x (Act price - base Cost))","309686.7564031188"],["Price-only GP%",null,"0.48612738540273787"]],"previewAddress":"A13:C15","previewRows":3,"previewCols":3}
+{"kind":"region","sheet":"Portfolio Level Analysis","address":"A17:C19","rows":3,"cols":3,"nonEmpty":8,"blank":1,"text":8,"maxTextLength":36,"preview":[["Actual Revenue","∑ (Act price x Act Vol)","637048.5714285674"],["Actual GP$","∑ (Act vol x (Act price - Act Cost))","262065.30519274436"],["Actual GP%",null,"0.4113741352642369"]],"previewAddress":"A17:C19","previewRows":3,"previewCols":3}
+FORMULAS Portfolio Level Analysis
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C5","formula":"=SUMPRODUCT(Base_price,base_vol)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"H5","formula":"=C11-C7"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C6","formula":"=SUMPRODUCT(base_vol,(Base_price-Base_cost))"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"H6","formula":"=C15-C11"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C7","formula":"=IFERROR(C6/C5,0)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"H7","formula":"=C19-C15"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"H8","formula":"=SUM(H5:H7)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C9","formula":"=SUMPRODUCT(act_vol,Base_price)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C10","formula":"=SUMPRODUCT(act_vol,(Base_price-Base_cost))"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C11","formula":"=IFERROR(C10/C9,0)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C13","formula":"=SUMPRODUCT(act_price,act_vol)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C14","formula":"=SUMPRODUCT(act_vol,(act_price-Base_cost))"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C15","formula":"=IFERROR(C14/C13,0)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C17","formula":"=SUMPRODUCT(act_price,act_vol)"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C18","formula":"=SUMPRODUCT(act_vol,(act_price-act_cost))"}
+{"kind":"formula","sheet":"Portfolio Level Analysis","address":"C19","formula":"=IFERROR(C18/C17,0)"}
+REGION Sheet1 A1:H22
+{"kind":"region","sheet":"Sheet1","address":"A5:C11","rows":7,"cols":3,"nonEmpty":16,"blank":5,"text":16,"maxTextLength":39,"preview":[["Base Revenue","∑ (Base price x Base Vol)","590086.4285714286"],["Base GP$","∑ (Base vol x (base price - base cost))","257038.6971366717"],["Base GP%",null,"base gp$/base revenue"],[null,null,null],["Mix-only Revenue","∑ (Base price x Act Vol)","615804.7168849484"],["Mix-only GP$","∑ (Act vol x (base price - base Cost))","288442.90185949963"],["Mix-only GP%",null,"mix -only gp$/mix-only Revenue"]],"previewAddress":"A5:C11","previewRows":7,"previewCols":3}
+{"kind":"region","sheet":"Sheet1","address":"G5:H11","rows":7,"cols":2,"nonEmpty":8,"blank":6,"text":8,"maxTextLength":52,"preview":[["Mix Effect (bps)","mix-onlygp%-base Gp%"],["Price Effect (bps)","price-onlygp%-mix only GP%"],["Cost Effect (bps)","actulGP%-price onlyGP%"],["Total Δ GP% (bps)","mix effect(bps)+price effect (bps)+cost effect (bps)"],[null,null],[null,null],[null,null]],"previewAddress":"G5:H11","previewRows":7,"previewCols":2}
+{"kind":"region","sheet":"Sheet1","address":"A13:C15","rows":3,"cols":3,"nonEmpty":8,"blank":1,"text":8,"maxTextLength":37,"preview":[["Price-only Revenue","∑ (Act price x Act Vol)","637048.5714285674"],["Price-only GP$ (A price, B cost)","∑ (Act vol x (Act price - base Cost))","309686.7564031188"],["Price-only GP%",null,"price_only gp$/price-only revenue"]],"previewAddress":"A13:C15","previewRows":3,"previewCols":3}
+{"kind":"region","sheet":"Sheet1","address":"A17:C19","rows":3,"cols":3,"nonEmpty":8,"blank":1,"text":8,"maxTextLength":36,"preview":[["Actual Revenue","∑ (Act price x Act Vol)","637048.5714285674"],["Actual GP$","∑ (Act vol x (Act price - Act Cost))","262065.30519274436"],["Actual GP%",null,"actual gp$/actual Revenue"]],"previewAddress":"A17:C19","previewRows":3,"previewCols":3}
+FORMULAS Sheet1
+{"kind":"formula","sheet":"Sheet1","address":"C5","formula":"=SUMPRODUCT(Base_price,base_vol)"}
+{"kind":"formula","sheet":"Sheet1","address":"C6","formula":"=SUMPRODUCT(base_vol,(Base_price-Base_cost))"}
+{"kind":"formula","sheet":"Sheet1","address":"C9","formula":"=SUMPRODUCT(act_vol,Base_price)"}
+{"kind":"formula","sheet":"Sheet1","address":"C10","formula":"=SUMPRODUCT(act_vol,(Base_price-Base_cost))"}
+{"kind":"formula","sheet":"Sheet1","address":"C13","formula":"=SUMPRODUCT(act_price,act_vol)"}
+{"kind":"formula","sheet":"Sheet1","address":"C14","formula":"=SUMPRODUCT(act_vol,(act_price-Base_cost))"}
+{"kind":"formula","sheet":"Sheet1","address":"C17","formula":"=SUMPRODUCT(act_price,act_vol)"}
+{"kind":"formula","sheet":"Sheet1","address":"C18","formula":"=SUMPRODUCT(act_vol,(act_price-act_cost))"}
+REGION Working A1:H19
+{"kind":"region","sheet":"Working","address":"A5:C11","rows":7,"cols":3,"nonEmpty":12,"blank":9,"text":12,"maxTextLength":16,"preview":[["Budget Revenue",null,"#NAME?"],["Budget GP$",null,"#NAME?"],["Budget GP%",null,"#NAME?"],[null,null,null],["Mix-only Revenue",null,"#NAME?"],["Mix-only GP$",null,"#NAME?"],["Mix-only GP%",null,"#NAME?"]],"previewAddress":"A5:C11","previewRows":7,"previewCols":3}
+{"kind":"region","sheet":"Working","address":"G5:H11","rows":7,"cols":2,"nonEmpty":9,"blank":5,"text":9,"maxTextLength":18,"preview":[["Mix Effect (bps)","#NAME?"],["Price Effect (bps)","#NAME?"],["Cost Effect (bps)","#NAME?"],["Total Δ GP% (bps)","#NAME?"],[null,null],[null,"#NAME?"],[null,null]],"previewAddress":"G5:H11","previewRows":7,"previewCols":2}
+{"kind":"region","sheet":"Working","address":"A13:C15","rows":3,"cols":3,"nonEmpty":6,"blank":3,"text":6,"maxTextLength":32,"preview":[["Price-only Revenue",null,"#NAME?"],["Price-only GP$ (A price, B cost)",null,"#NAME?"],["Price-only GP%",null,"#NAME?"]],"previewAddress":"A13:C15","previewRows":3,"previewCols":3}
+{"kind":"region","sheet":"Working","address":"A17:C19","rows":3,"cols":3,"nonEmpty":6,"blank":3,"text":6,"maxTextLength":14,"preview":[["Actual Revenue",null,"#NAME?"],["Actual GP$",null,"#NAME?"],["Actual GP%",null,"#NAME?"]],"previewAddress":"A17:C19","previewRows":3,"previewCols":3}
+FORMULAS Working
+{"kind":"formula","sheet":"Working","address":"C5","formula":"=SUMPRODUCT(base_vol,Base_price_range)"}
+{"kind":"formula","sheet":"Working","address":"H5","formula":"=C11-C7"}
+{"kind":"formula","sheet":"Working","address":"C6","formula":"=SUMPRODUCT(base_vol,(Base_price_range-base_cost_range))"}
+{"kind":"formula","sheet":"Working","address":"H6","formula":"=C15-C11"}
+{"kind":"formula","sheet":"Working","address":"C7","formula":"=C6/C5"}
+{"kind":"formula","sheet":"Working","address":"H7","formula":"=C19-C15"}
+{"kind":"formula","sheet":"Working","address":"H8","formula":"=SUM(H5:H7)"}
+{"kind":"formula","sheet":"Working","address":"C9","formula":"=SUMPRODUCT(lat_vol,Base_price_range)"}
+{"kind":"formula","sheet":"Working","address":"C10","formula":"=SUMPRODUCT(lat_vol,(Base_price_range-base_cost_range))"}
+{"kind":"formula","sheet":"Working","address":"H10","formula":"=C19-C7"}
+{"kind":"formula","sheet":"Working","address":"C11","formula":"=C10/C9"}
+{"kind":"formula","sheet":"Working","address":"C13","formula":"=SUMPRODUCT(lat_vol,lat_price)"}
+{"kind":"formula","sheet":"Working","address":"C14","formula":"=SUMPRODUCT(lat_vol,(lat_price-base_cost_range))"}
+{"kind":"formula","sheet":"Working","address":"C15","formula":"=C14/C13"}
+{"kind":"formula","sheet":"Working","address":"C17","formula":"=SUMPRODUCT(lat_vol,lat_price)"}
+{"kind":"formula","sheet":"Working","address":"C18","formula":"=SUMPRODUCT(lat_vol,(lat_price-lat_cost))"}
+{"kind":"formula","sheet":"Working","address":"C19","formula":"=C18/C17"}
+REGION GP% Bridge A1:C10
+{"kind":"region","sheet":"GP% Bridge","address":"A1:C5","rows":5,"cols":3,"nonEmpty":11,"blank":4,"text":11,"maxTextLength":21,"preview":[["Step","Formula","GP%"],["Budget GP%","0.4355949987850936",null],["Price Effect GP%","0.44750845309067766",null],["Price+COGS Effect GP%","0.38573095760567716",null],["Actual GP%","0.4113741352642369",null]],"previewAddress":"A1:C5","previewRows":5,"previewCols":3}
+{"kind":"region","sheet":"GP% Bridge","address":"A7:C10","rows":4,"cols":3,"nonEmpty":8,"blank":4,"text":8,"maxTextLength":21,"preview":[["Price Effect (pp)","0.011913454305584048",null],["COGS Effect (pp)","-0.0617774954850005",null],["Mix Effect (pp)","0.025643177658559724",null],["Total GP% Change (pp)","-0.024220863520856728",null]],"previewAddress":"A7:C10","previewRows":4,"previewCols":3}
+FORMULAS GP% Bridge
+{"kind":"formula","sheet":"GP% Bridge","address":"B2","formula":"=(SUMPRODUCT('2023'!C2:C11, '2023'!D2:D11 - '2023'!E2:E11)) / SUMPRODUCT('2023'!C2:C11, '2023'!D2:D11)"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B3","formula":"=(SUMPRODUCT('2023'!C2:C11, 'Product Level Analysis'!D3:D12 - '2023'!E2:E11)) / SUMPRODUCT('2023'!C2:C11, 'Product Level Analysis'!D3:D12)"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B4","formula":"=(SUMPRODUCT('2023'!C2:C11, 'Product Level Analysis'!D3:D12 - 'Product Level Analysis'!E3:E12)) / SUMPRODUCT('2023'!C2:C11, 'Product Level Analysis'!D3:D12)"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B5","formula":"=(SUMPRODUCT('Product Level Analysis'!C3:C12, 'Product Level Analysis'!D3:D12 - 'Product Level Analysis'!E3:E12)) / SUMPRODUCT('Product Level Analysis'!C3:C12, 'Product Level Analysis'!D3:D12)"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B7","formula":"=B3-B2"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B8","formula":"=B4-B3"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B9","formula":"=B5-B4"}
+{"kind":"formula","sheet":"GP% Bridge","address":"B10","formula":"=B5-B2"}

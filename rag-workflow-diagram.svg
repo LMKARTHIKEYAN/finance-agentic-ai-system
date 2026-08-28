@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="700" viewBox="0 0 2400 700">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#334155"/>
+    </marker>
+    <style>
+      .group { fill:#f8fafc; stroke:#94a3b8; stroke-width:3; rx:22; }
+      .box { fill:#ffffff; stroke:#2563eb; stroke-width:3; rx:14; }
+      .label { font: 600 19px 'Segoe UI', Arial, sans-serif; fill:#0f172a; text-anchor:middle; dominant-baseline:middle; }
+      .title { font: 700 31px 'Segoe UI', Arial, sans-serif; fill:#1e3a8a; }
+      .arrow { fill:none; stroke:#334155; stroke-width:4; marker-end:url(#arrow); }
+    </style>
+  </defs>
+  <rect width="2400" height="700" fill="#ffffff"/>
+
+  <rect class="group" x="35" y="70" width="960" height="555"/>
+  <text class="title" x="70" y="120">Offline indexing</text>
+  <rect class="box" x="90" y="275" width="170" height="90"/><text class="label" x="175" y="320">Documents</text>
+  <rect class="box" x="310" y="275" width="190" height="90"/><text class="label" x="405" y="320">Load and clean</text>
+  <rect class="box" x="550" y="275" width="190" height="90"/><text class="label" x="645" y="320">Chunk documents</text>
+  <rect class="box" x="790" y="205" width="165" height="90"/><text class="label" x="872" y="250">Embedding model</text>
+  <rect class="box" x="790" y="405" width="165" height="90"/><text class="label" x="872" y="450">Vector database</text>
+  <path class="arrow" d="M260 320 H310"/><path class="arrow" d="M500 320 H550"/><path class="arrow" d="M740 320 C765 320 765 250 790 250"/><path class="arrow" d="M872 295 V405"/>
+
+  <rect class="group" x="1035" y="70" width="1330" height="555"/>
+  <text class="title" x="1070" y="120">Online querying</text>
+  <rect class="box" x="1080" y="190" width="170" height="90"/><text class="label" x="1165" y="235">User question</text>
+  <rect class="box" x="1300" y="190" width="190" height="90"/><text class="label" x="1395" y="235">Query processing</text>
+  <rect class="box" x="1540" y="190" width="190" height="90"/><text class="label" x="1635" y="235">Query embedding</text>
+  <rect class="box" x="1780" y="190" width="210" height="90"/><text class="label" x="1885" y="235">Retrieve top-k chunks</text>
+  <rect class="box" x="2040" y="190" width="160" height="90"/><text class="label" x="2120" y="235">Reranking</text>
+  <rect class="box" x="1740" y="405" width="300" height="90"/><text class="label" x="1890" y="450">Prompt: question + context</text>
+  <rect class="box" x="2090" y="405" width="115" height="90"/><text class="label" x="2147" y="450">LLM</text>
+  <rect class="box" x="2225" y="385" width="120" height="130"/><text class="label" x="2285" y="430"><tspan x="2285" dy="0">Grounded</tspan><tspan x="2285" dy="28">answer +</tspan><tspan x="2285" dy="28">citations</tspan></text>
+  <path class="arrow" d="M1250 235 H1300"/><path class="arrow" d="M1490 235 H1540"/><path class="arrow" d="M1730 235 H1780"/><path class="arrow" d="M1990 235 H2040"/>
+  <path class="arrow" d="M2120 280 V340 H1890 V405"/><path class="arrow" d="M2040 450 H2090"/><path class="arrow" d="M2205 450 H2225"/>
+  <path class="arrow" d="M955 450 H1700 V320 H1885 V280"/>
+</svg>

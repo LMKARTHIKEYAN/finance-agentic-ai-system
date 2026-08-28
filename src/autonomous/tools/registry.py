@@ -21,6 +21,18 @@ from src.autonomous.tools.retrieval_tools import retrieve_company_context
 from src.autonomous.tools.revenue_variance_tools import (
     calculate_validated_revenue_variance,
 )
+from src.autonomous.tools.trend_analysis_tool import analyze_trends
+from src.autonomous.tools.period_comparison_tool import compare_periods
+from src.autonomous.tools.drilldown_tool import analyze_drilldown
+from src.autonomous.tools.root_cause_tool import identify_operational_drivers
+from src.autonomous.tools.anomaly_detection_tool import detect_anomalies
+from src.autonomous.tools.category_profitability_tool import analyze_category_profitability
+from src.autonomous.tools.customer_route_tool import analyze_customers_and_routes
+from src.autonomous.tools.forecast_accuracy_tool import analyze_forecast_accuracy
+from src.autonomous.tools.scenario_analysis_tool import analyze_scenario
+from src.autonomous.tools.driver_forecast_tool import forecast_from_drivers
+from src.autonomous.tools.profitability_alert_tool import detect_profitability_alerts
+from src.autonomous.tools.action_tracker_tool import prepare_management_action
 
 
 ToolCallable = Callable[..., Any]
@@ -125,6 +137,18 @@ DEFAULT_TOOL_REGISTRY = ToolRegistry(
             "root_cause",
             False,
         ),
+        ToolDefinition("analyze_trends", "Calculate daily, weekly, or monthly KPI trends.", analyze_trends, ("finance_context",), "trend", True),
+        ToolDefinition("compare_periods", "Compare two periods across operational and financial KPIs.", compare_periods, ("finance_context", "current_start", "current_end", "comparison_start", "comparison_end"), "period_comparison", True),
+        ToolDefinition("analyze_drilldown", "Drill into vehicle, cluster, status, or weekday performance.", analyze_drilldown, ("finance_context", "dimension"), "drilldown", True),
+        ToolDefinition("identify_operational_drivers", "Identify evidence-supported operating associations without claiming causation.", identify_operational_drivers, ("finance_context",), "operational_drivers", True),
+        ToolDefinition("detect_anomalies", "Detect robust daily KPI anomalies.", detect_anomalies, ("finance_context",), "anomaly", True),
+        ToolDefinition("analyze_category_profitability", "Calculate category P&L and unit economics.", analyze_category_profitability, ("finance_context",), "category_profitability", True),
+        ToolDefinition("analyze_customers_and_routes", "Analyze customer concentration and route profitability when fields are available.", analyze_customers_and_routes, ("finance_context",), "customer_route", True),
+        ToolDefinition("analyze_forecast_accuracy", "Calculate forecast error, bias, MAPE, and accuracy.", analyze_forecast_accuracy, ("actuals", "forecasts"), "forecast_accuracy", True),
+        ToolDefinition("analyze_scenario", "Calculate deterministic what-if scenarios.", analyze_scenario, ("finance_context",), "scenario", True),
+        ToolDefinition("forecast_from_drivers", "Forecast revenue and GP from orders, AOV, and direct-cost drivers.", forecast_from_drivers, ("finance_context",), "driver_forecast", True),
+        ToolDefinition("detect_profitability_alerts", "Flag GP and cancellation threshold breaches.", detect_profitability_alerts, ("finance_context",), "profitability_alert", True),
+        ToolDefinition("prepare_management_action", "Prepare an approval-aware management action draft.", prepare_management_action, ("issue", "recommended_action", "owner", "due_date"), "management_action", False),
         ToolDefinition(
             "generate_supported_recommendations",
             "Generate deterministic recommendations from root causes.",
