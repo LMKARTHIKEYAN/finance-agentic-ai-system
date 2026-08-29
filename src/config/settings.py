@@ -9,6 +9,13 @@ Email, Power BI, and Vector Databases are added.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+
+# Settings may be imported by routing modules before API dependencies are
+# created, so environment loading belongs at the configuration boundary.
+load_dotenv()
+
 
 class Settings:
     """
@@ -135,6 +142,20 @@ class Settings:
     )
     AUTONOMOUS_MAX_TOOL_CALLS: int = int(
         os.getenv("AUTONOMOUS_MAX_TOOL_CALLS", "10")
+    )
+
+    # LangGraph is introduced behind a separate safety switch. Shadow mode
+    # preserves the current user-facing runtime while collecting comparisons.
+    LANGGRAPH_ENABLED: bool = (
+        os.getenv("LANGGRAPH_ENABLED", "false").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    LANGGRAPH_SHADOW_MODE: bool = (
+        os.getenv("LANGGRAPH_SHADOW_MODE", "true").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    LANGGRAPH_MAX_STEPS: int = int(
+        os.getenv("LANGGRAPH_MAX_STEPS", "8")
     )
 
 

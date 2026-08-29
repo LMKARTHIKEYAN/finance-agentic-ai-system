@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from src.services.autonomous_finance_service import AutonomousFinanceService
+from src.autonomous.hybrid_runtime_router import HybridRuntimeRouter
 from src.pipelines.monthly import run_monthly_pipeline
 from src.tools.pdf_report_tool import PdfReportTool
 
@@ -22,20 +22,65 @@ class AutonomousAskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 
 
-def get_autonomous_service() -> AutonomousFinanceService:
-    from src.api.dependencies import get_autonomous_finance_service
-    return get_autonomous_finance_service()
+def get_autonomous_service() -> HybridRuntimeRouter:
+    from src.api.dependencies import get_hybrid_runtime_router
+    return get_hybrid_runtime_router()
 
 
 @router.post("/ask")
 def ask_autonomous_finance(
     request: AutonomousAskRequest,
-    service: AutonomousFinanceService = Depends(get_autonomous_service),
+    service: HybridRuntimeRouter = Depends(get_autonomous_service),
 ) -> dict[str, Any]:
     try:
-        return service.ask(request.question).__dict__
+        result = service.run(request.question)
+        response = result.response
+        payload = dict(response) if isinstance(response, dict) else dict(response.__dict__)
+        payload.update({
+            "execution_mode": result.execution_mode,
+            "runtime": result.runtime,
+            "langgraph_shadow": {
+                "executed": result.shadow_executed,
+                "succeeded": result.shadow_executed and result.shadow_error is None,
+                "error": result.shadow_error,
+                "summary": _safe_shadow_summary(result.shadow_result),
+            },
+        })
+        return payload
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _safe_shadow_summary(shadow_result: Any) -> dict[str, Any] | None:
+    """Expose graph audit metadata without trusted context or raw payloads."""
+
+    if not isinstance(shadow_result, dict):
+        return None
+    trace = []
+    selected_tools = []
+    for item in shadow_result.get("execution_trace", []):
+        if not isinstance(item, dict):
+            continue
+        safe = {
+            key: item.get(key)
+            for key in ("step", "node", "action", "tool_name", "evidence_id")
+            if item.get(key) is not None
+        }
+        trace.append(safe)
+        if safe.get("tool_name") and safe.get("node") == "supervisor":
+            selected_tools.append(safe["tool_name"])
+    validation = shadow_result.get("validation") or {}
+    review = shadow_result.get("review") or {}
+    return {
+        "completed": bool(shadow_result.get("completed")),
+        "step_count": int(shadow_result.get("step_count", 0)),
+        "selected_tools": selected_tools,
+        "evidence_count": len(shadow_result.get("evidence", [])),
+        "validation_passed": bool(validation.get("passed")),
+        "reviewer_decision": review.get("decision"),
+        "final_answer": shadow_result.get("final_answer"),
+        "execution_trace": trace,
+    }
 
 
 @router.get("/monthly-report/{year}/{month}")

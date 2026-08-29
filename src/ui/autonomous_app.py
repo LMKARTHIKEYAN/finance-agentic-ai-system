@@ -75,6 +75,8 @@ def main() -> None:
                     st.json(message["evidence"])
             if message.get("metrics"):
                 st.caption(f"Execution metrics: {message['metrics']}")
+            if message.get("langgraph_shadow"):
+                _render_langgraph_shadow(message["langgraph_shadow"])
             if message.get("management_commentary"):
                 _render_management_commentary(message["management_commentary"])
             if message.get("evidence"):
@@ -102,6 +104,7 @@ def _submit(question: str) -> None:
                     "evidence": response.get("evidence") or [],
                     "metrics": response.get("metrics") or {},
                     "management_commentary": response.get("management_commentary") or {},
+                    "langgraph_shadow": response.get("langgraph_shadow") or {},
                 }
             )
         except FinanceApiClientError as exc:
@@ -109,6 +112,38 @@ def _submit(question: str) -> None:
                 {"role": "assistant", "content": f"API error: {exc}"}
             )
     st.rerun()
+
+
+def _render_langgraph_shadow(shadow: dict) -> None:
+    if not shadow.get("executed"):
+        return
+    succeeded = bool(shadow.get("succeeded"))
+    with st.expander(
+        "LangGraph shadow execution — " + ("successful" if succeeded else "failed"),
+        expanded=False,
+    ):
+        if not succeeded:
+            st.warning(shadow.get("error") or "Shadow execution failed safely.")
+            return
+        summary = shadow.get("summary") or {}
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Runtime", "LangGraph")
+        col2.metric("Graph steps", summary.get("step_count", 0))
+        col3.metric("Evidence", summary.get("evidence_count", 0))
+        col4.metric("Validation", "Passed" if summary.get("validation_passed") else "Review")
+        st.caption(
+            "Reviewer: " + str(summary.get("reviewer_decision") or "not completed")
+        )
+        tools = summary.get("selected_tools") or []
+        if tools:
+            st.markdown("**LLM-selected tools:** " + " → ".join(tools))
+        trace = summary.get("execution_trace") or []
+        if trace:
+            st.markdown("**Execution trace**")
+            st.dataframe(pd.DataFrame(trace), use_container_width=True, hide_index=True)
+        if summary.get("final_answer"):
+            st.markdown("**Shadow answer**")
+            st.info(summary["final_answer"])
 
 
 def _render_pnl_table(evidence_records: list[dict]) -> None:
