@@ -1,5 +1,5 @@
 # finance-agentic-ai-system
-Multi-Agent Financial Planning &amp; Analysis (FP&amp;A) System built using Python, LangGraph, LangChain, Snowflake, FastAPI, RAG, OpenAI API, Streamlit, and Power BI.
+Multi-Agent Financial Planning &amp; Analysis (FP&amp;A) System built using Python, LangGraph, LangChain, PostgreSQL, FastAPI, RAG, OpenAI API, Streamlit, and Power BI.
 # Autonomous Finance Agentic AI System
 
 This repository implements a bounded autonomous FP&A agent. A CFO supplies a
@@ -10,7 +10,7 @@ condition is reached.
 ```text
 User/CFO or scheduler -> Goal Builder -> Autonomous Supervisor
     -> Decide -> Act -> Observe -> Decide
-    -> Snowflake / Finance / Vector RAG / Reporting tools
+    -> PostgreSQL / Finance / Vector RAG / Reporting tools
     -> Shared state -> Validation and reconciliation
     -> clarification | approval | final cited answer
 ```
@@ -22,7 +22,7 @@ Core implementation:
 
 - `src/autonomous/`: goals, decisions, agent loop, evidence, guardrails,
   scheduling and release control.
-- `src/autonomous/tools/`: Snowflake, deterministic finance, RAG, validation,
+- `src/autonomous/tools/`: PostgreSQL-backed finance, deterministic finance, RAG, validation,
   PDF and email adapters.
 - `src/services/autonomous_finance_service.py`: application-level autonomous
   finance execution.

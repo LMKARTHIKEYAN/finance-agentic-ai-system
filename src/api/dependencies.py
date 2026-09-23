@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.config.settings import settings
-from src.integrations.snowflake_connection import SnowflakeConnectionConfig, SnowflakeConnectionFactory
-from src.repositories.snowflake_reporting_repository import SnowflakeReportingRepository
+from src.integrations.postgres_connection import PostgresConnectionConfig, PostgresConnectionFactory
+from src.repositories.postgres_reporting_repository import PostgresReportingRepository
 from src.services.autonomous_finance_service import AutonomousFinanceService
 from src.autonomous.hybrid_runtime_router import HybridRuntimeRouter
 from src.autonomous.langgraph_runtime.context_factory import ComplexFinanceContextFactory
@@ -21,9 +21,9 @@ from src.rag.vector_store import InMemoryVectorStore
 
 
 @lru_cache(maxsize=1)
-def get_reporting_repository() -> SnowflakeReportingRepository:
-    config = SnowflakeConnectionConfig.from_settings(settings)
-    return SnowflakeReportingRepository(SnowflakeConnectionFactory(config))
+def get_reporting_repository() -> PostgresReportingRepository:
+    config = PostgresConnectionConfig.from_settings(settings)
+    return PostgresReportingRepository(PostgresConnectionFactory(config))
 
 
 @lru_cache(maxsize=1)

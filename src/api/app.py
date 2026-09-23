@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
         title="Finance Agentic AI API",
         description=(
             "Autonomous FP&A agent with bounded tool selection, "
-            "Snowflake finance calculations and cited RAG evidence."
+            "PostgreSQL finance calculations and cited RAG evidence."
         ),
         version="2.0.0",
         docs_url="/docs",

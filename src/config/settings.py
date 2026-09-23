@@ -32,8 +32,16 @@ class Settings:
 
     FINANCE_DATA_SOURCE: str = os.getenv(
         "FINANCE_DATA_SOURCE",
-        "local",
+        "postgres",
     ).strip().lower()
+
+    FINANCE_DATABASE_URL: str = os.getenv(
+        "FINANCE_DATABASE_URL",
+        "",
+    ).strip()
+    POSTGRES_CONNECT_TIMEOUT_SECONDS: int = int(
+        os.getenv("POSTGRES_CONNECT_TIMEOUT_SECONDS", "10")
+    )
 
     SNOWFLAKE_ACCOUNT: str = os.getenv(
         "SNOWFLAKE_ACCOUNT",

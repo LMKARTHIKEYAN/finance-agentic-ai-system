@@ -41,7 +41,11 @@ def ask_autonomous_finance(
             "runtime": result.runtime,
             "langgraph_shadow": {
                 "executed": result.shadow_executed,
-                "succeeded": result.shadow_executed and result.shadow_error is None,
+                "succeeded": (
+                    result.shadow_executed
+                    and result.shadow_error is None
+                    and bool((result.shadow_result or {}).get("final_answer"))
+                ),
                 "error": result.shadow_error,
                 "summary": _safe_shadow_summary(result.shadow_result),
             },
@@ -79,6 +83,8 @@ def _safe_shadow_summary(shadow_result: Any) -> dict[str, Any] | None:
         "validation_passed": bool(validation.get("passed")),
         "reviewer_decision": review.get("decision"),
         "final_answer": shadow_result.get("final_answer"),
+        "pending_question": shadow_result.get("pending_question"),
+        "approval_request": shadow_result.get("approval_request"),
         "execution_trace": trace,
     }
 

@@ -98,7 +98,10 @@ def _completion_criteria(
         criteria.append(GoalCompletionCriterion(key="driver_forecast", description="A driver-based forecast is calculated from orders, AOV, and cost drivers."))
     if any(word in normalized for word in ("alert", "alerts", "threshold breach")):
         criteria.append(GoalCompletionCriterion(key="profitability_alerts", description="Profitability and operating thresholds are evaluated."))
-    if any(phrase in normalized for phrase in ("action tracker", "track action", "management action")):
+    if any(phrase in normalized for phrase in (
+        "action tracker", "track action", "create management action",
+        "record management action", "assign management action",
+    )):
         criteria.append(GoalCompletionCriterion(key="management_action", description="A management action draft is prepared for approval."))
 
     daily_extreme_request = (

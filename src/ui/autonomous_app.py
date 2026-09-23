@@ -118,14 +118,22 @@ def _render_langgraph_shadow(shadow: dict) -> None:
     if not shadow.get("executed"):
         return
     succeeded = bool(shadow.get("succeeded"))
+    summary = shadow.get("summary") or {}
+    paused = bool(summary.get("pending_question") or summary.get("approval_request"))
     with st.expander(
-        "LangGraph shadow execution — " + ("successful" if succeeded else "failed"),
+        "LangGraph shadow execution — " + (
+            "successful" if succeeded else "paused" if paused else "incomplete"
+        ),
         expanded=False,
     ):
         if not succeeded:
-            st.warning(shadow.get("error") or "Shadow execution failed safely.")
+            st.warning(
+                summary.get("pending_question")
+                or summary.get("approval_request")
+                or shadow.get("error")
+                or "Shadow execution ended without a validated final answer."
+            )
             return
-        summary = shadow.get("summary") or {}
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Runtime", "LangGraph")
         col2.metric("Graph steps", summary.get("step_count", 0))

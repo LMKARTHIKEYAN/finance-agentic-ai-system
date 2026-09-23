@@ -67,7 +67,7 @@ def load_finance_data(
         "revenue_definition": "commission_amount",
         "category": category,
         "allocation_basis": allocation_basis,
-        "summary": "Snowflake finance data loaded for the requested period.",
+        "summary": "PostgreSQL finance data loaded for the requested period.",
     }
 
 
@@ -117,8 +117,8 @@ def check_data_freshness(*, repository: Any, expected_through: date) -> dict[str
         "expected_through": expected_through,
         "is_current": current,
         "summary": (
-            "Snowflake data is current."
+            "PostgreSQL data is current."
             if current
-            else "Snowflake data is not current for the requested cutoff."
+            else "PostgreSQL data is not current for the requested cutoff."
         ),
     }
